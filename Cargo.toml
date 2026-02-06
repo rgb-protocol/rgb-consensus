@@ -27,7 +27,7 @@ amplify = { version = "=4.8.1", features = [
 ] }
 baid64 = "=0.4.1"
 base85 = "=2.0.0"
-bitcoin = { version = "0.32.7", features = [
+bitcoin = { version = "0.32.8", features = [
     "serde",
 ] }
 chrono = "0.4.38"

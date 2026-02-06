@@ -78,6 +78,6 @@ impl Proof<Method> for OpretProof {
     fn method(&self) -> Method { Method::OpretFirst }
 
     fn verify(&self, msg: &Commitment, tx: &Tx) -> Result<(), EmbedVerifyError<OpretError>> {
-        tx.verify(msg, self)
+        <Tx as EmbedCommitVerify<Commitment, OpretFirst>>::verify(tx, msg, self)
     }
 }
