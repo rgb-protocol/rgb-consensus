@@ -153,12 +153,10 @@ impl Schema {
                     None,
                 )));
             }
-            let contract_state = context.contract_state;
-            if contract_state.borrow_mut().evolve_state(op).is_err() {
-                return Err(ValidationError::InvalidConsignment(Failure::ContractStateFilled(
-                    opid,
-                )));
-            }
+        }
+        let contract_state = context.contract_state;
+        if contract_state.borrow_mut().evolve_state(op).is_err() {
+            return Err(ValidationError::InvalidConsignment(Failure::ContractStateFilled(opid)));
         }
         Ok(())
     }
