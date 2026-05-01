@@ -1,6 +1,6 @@
 [package]
 name = "rgb-consensus"
-version = "0.11.1-rc.9"
+version = "0.11.1-rc.10"
 authors = ["Zoe Faltibà <zoefaltiba@gmail.com>"]
 description = "RGB Consensus Library: confidential & scalable smart contracts on Bitcoin & Lightning (consensus layer)"
 repository = "https://github.com/rgb-protocol/rgb-consensus"
@@ -18,7 +18,7 @@ name = "rgbcore"
 crate-type = ["cdylib", "rlib"] # We need this for WASM
 
 [dependencies]
-rgb-aluvm = { version = "~0.11.1-rc.2", features = [
+rgb-aluvm = { version = "~0.11.1-rc.3", features = [
     "rgb-ascii-armor",
     "std",
 ] }
