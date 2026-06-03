@@ -673,7 +673,7 @@ pub struct MerkleProof {
 
     /// Merkle proof path consisting of node hashing partners.
     #[getter(skip)]
-    path: Confined<Vec<MerkleHash>, 0, 32>,
+    path: Confined<Vec<MerkleHash>, 0, 31>,
 }
 impl DefaultBasedStrictDumb for MerkleProof {}
 
@@ -695,10 +695,10 @@ impl MerkleProof {
     pub fn factored_width(&self) -> u32 { self.width_limit() - self.cofactor as u32 }
 
     /// Converts the proof into inner merkle path representation
-    pub fn into_path(self) -> Confined<Vec<MerkleHash>, 0, 32> { self.path }
+    pub fn into_path(self) -> Confined<Vec<MerkleHash>, 0, 31> { self.path }
 
     /// Constructs the proof into inner merkle path representation
-    pub fn to_path(&self) -> Confined<Vec<MerkleHash>, 0, 32> { self.path.clone() }
+    pub fn to_path(&self) -> Confined<Vec<MerkleHash>, 0, 31> { self.path.clone() }
 
     /// Returns inner merkle path representation
     pub fn as_path(&self) -> &[MerkleHash] { &self.path }

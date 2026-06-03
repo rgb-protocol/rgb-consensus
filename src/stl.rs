@@ -37,17 +37,17 @@ use crate::{
 };
 
 pub const LIB_ID_COMMIT_VERIFY: &str =
-    "stl:G28pSECj-k8LSNgX-194cjdl-MJhnIBd-P8PDPq2-mUsF6Nc#sigma-mozart-round";
+    "stl:scauscFb-HraEd6t-pq~qoBw-mBZNtjA-_4KqtNF-niQxr5Y#thermos-elastic-george";
 /// Strict types id for the library providing data types from [`dbc`] and
 /// [`seals`] crates.
 pub const LIB_ID_BPCORE: &str =
-    "stl:tFjXtx2y-aVOTVcD-lfw3f4W-9RLWJmn-o8_nFyL-7WpZRVo#single-college-raja";
+    "stl:FZVwlcEJ-p0LhCJg-CU6awvX-9RTo2ST-3G5hYEa-gEJCjUA#cigar-master-style";
 /// Strict types id for the library providing data types for RGB consensus.
 pub const LIB_ID_RGB_COMMIT: &str =
-    "stl:IEY3xdBm-Xtd1Vuu-iMrtQWr-gSQ7d0W-aljsPOg-sD4afjM#plaza-madonna-papa";
+    "stl:fHPvkmm2-jnlIdf8-44fradm-~EbYYk2-OqkiKYl-Rohkac4#domain-numeric-actor";
 /// Strict types id for the library providing data types for RGB consensus.
 pub const LIB_ID_RGB_LOGIC: &str =
-    "stl:yqNY5jMt-mFYiR4O-wdbw6d9-vOPei8h-o3QQD3E-L5x1tPc#adam-hexagon-noise";
+    "stl:dC6XWoqx-WCGR78B-~OSC3eP-Ux7Z4cZ-Xe4Re56-zJrwaDs#loyal-respect-tourist";
 
 pub fn commit_verify_stl() -> TypeLib {
     LibBuilder::with(libname!(LIB_NAME_COMMIT_VERIFY), [
