@@ -23,7 +23,7 @@
 use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Display, Formatter};
 use std::num::NonZeroU32;
 use std::rc::Rc;
@@ -32,6 +32,7 @@ use bitcoin::{OutPoint as Outpoint, Txid};
 use chrono::{MappedLocalTime, TimeZone, Utc};
 use strict_encoding::{StrictDecode, StrictDumb, StrictEncode};
 
+use super::external_anchor::ExternalAnchor;
 use crate::{
     AssignmentType, AssignmentsRef, BundleId, ContractId, FungibleState, Genesis, GlobalState,
     GlobalStateType, GraphSeal, Layer1, Metadata, OpFullType, OpId, Operation, RevealedData,
@@ -401,6 +402,7 @@ pub struct VmContext<'op, S: ContractStateAccess> {
     pub contract_id: ContractId,
     pub op_info: OpInfo<'op>,
     pub contract_state: Rc<RefCell<S>>,
+    pub pending_external_anchors: RefCell<BTreeSet<ExternalAnchor>>,
 }
 
 type PrevState = BTreeMap<AssignmentType, Vec<RevealedState>>;

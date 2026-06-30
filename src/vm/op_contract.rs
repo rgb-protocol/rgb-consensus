@@ -36,7 +36,7 @@ use amplify::Wrapper;
 use secp256k1::{ecdsa, Message, PublicKey};
 
 use super::opcodes::*;
-use super::{ContractStateAccess, VmContext};
+use super::{ContractStateAccess, ExternalAnchor, VmContext};
 use crate::vm::{GlobalsIter, OrdOpRef};
 use crate::{Assign, AssignmentType, GlobalStateType, MetaType, RevealedState, TypedAssigns};
 
@@ -180,6 +180,16 @@ pub enum ContractOp<S: ContractStateAccess> {
     #[display("vts     {0}")]
     Vts(RegS),
 
+    /// Push a mint anchor for the amount and after-block in the given `a64` registers.
+    ///
+    /// The first argument specifies which `a64[N]` register holds the amount to
+    /// include in the external anchor, the second which `a64[M]` register holds
+    /// the external-chain block number after which the mint event must be
+    /// looked for. Sets `st0` to `false` and stops if either register is absent
+    /// or the amount is zero.
+    #[display("pma     a64{0},a64{1}")]
+    Pma(Reg16, Reg16),
+
     /// All other future unsupported operations, which must set `st0` to
     /// `false` and stop the execution.
     #[display("fail    {0}")]
@@ -209,6 +219,11 @@ impl<S: ContractStateAccess> InstructionSet for ContractOp<S> {
 
             ContractOp::Vts(_) => bset![],
 
+            ContractOp::Pma(reg_amount, reg_after_block) => bset![
+                Reg::A(RegA::A64, Reg32::from(*reg_amount)),
+                Reg::A(RegA::A64, Reg32::from(*reg_after_block))
+            ],
+
             ContractOp::Fail(_, _) => bset![],
         }
     }
@@ -235,6 +250,7 @@ impl<S: ContractStateAccess> InstructionSet for ContractOp<S> {
                 bset![]
             }
             ContractOp::Vts(reg) => bset![Reg::S(*reg)],
+            ContractOp::Pma(_, _) => bset![],
             ContractOp::Fail(_, _) => bset![],
         }
     }
@@ -253,6 +269,7 @@ impl<S: ContractStateAccess> InstructionSet for ContractOp<S> {
             ContractOp::LdM(_, _) => 6,
             ContractOp::Svs(_) | ContractOp::Sas(_) | ContractOp::Sps(_) => 20,
             ContractOp::Vts(_) => 512,
+            ContractOp::Pma(_, _) => 20,
             ContractOp::Fail(_, _) => u64::MAX,
         }
     }
@@ -512,6 +529,28 @@ impl<S: ContractStateAccess> InstructionSet for ContractOp<S> {
                     }
                 }
             },
+            ContractOp::Pma(reg_amount, reg_after_block) => {
+                let Some(amount) = *regs.get_n(RegA::A64, Reg32::from(*reg_amount)) else {
+                    fail!()
+                };
+                let amount = u64::from(amount);
+                if amount == 0 {
+                    fail!()
+                }
+                let Some(after_block) = *regs.get_n(RegA::A64, Reg32::from(*reg_after_block))
+                else {
+                    fail!()
+                };
+                let after_block = u64::from(after_block);
+                context
+                    .pending_external_anchors
+                    .borrow_mut()
+                    .insert(ExternalAnchor::MintEvent {
+                        opid: context.op_info.id,
+                        amount,
+                        after_block,
+                    });
+            }
             // All other future unsupported operations, which must set `st0` to `false`.
             _ => fail!(),
         }
@@ -541,6 +580,8 @@ impl<S: ContractStateAccess> Bytecode for ContractOp<S> {
             ContractOp::Sps(_) => INSTR_SPS,
 
             ContractOp::Vts(_) => INSTR_VTS,
+
+            ContractOp::Pma(_, _) => INSTR_PMA,
 
             ContractOp::Fail(other, _) => *other,
         }
@@ -605,6 +646,11 @@ impl<S: ContractStateAccess> Bytecode for ContractOp<S> {
             ContractOp::Sps(owned_type) => writer.write_u16(*owned_type)?,
 
             ContractOp::Vts(reg_s) => writer.write_u4(*reg_s)?,
+
+            ContractOp::Pma(reg_amount, reg_after_block) => {
+                writer.write_u4(reg_amount)?;
+                writer.write_u4(reg_after_block)?;
+            }
 
             ContractOp::Fail(_, _) => {}
         }
@@ -674,6 +720,8 @@ impl<S: ContractStateAccess> Bytecode for ContractOp<S> {
             INSTR_SPS => Self::Sps(reader.read_u16()?.into()),
 
             INSTR_VTS => Self::Vts(reader.read_u4()?.into()),
+
+            INSTR_PMA => Self::Pma(reader.read_u4()?.into(), reader.read_u4()?.into()),
 
             x => Self::Fail(x, PhantomData),
         })

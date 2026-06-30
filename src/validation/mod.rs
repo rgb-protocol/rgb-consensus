@@ -42,3 +42,5 @@ pub use validator::{
     ResolveWitness, ValidationConfig, ValidationError, Validator, WitnessOrdProvider,
     WitnessResolverError, WitnessStatus,
 };
+
+pub use crate::vm::ExternalAnchor;

@@ -21,7 +21,7 @@
 // limitations under the License.
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::rc::Rc;
 
 use aluvm::data::Number;
@@ -36,7 +36,9 @@ use super::validator::ValidationError;
 use super::Failure;
 use crate::schema::{AssignmentsSchema, GlobalSchema};
 use crate::validation::SchemaRules;
-use crate::vm::{ContractStateAccess, ContractStateEvolve, OpInfo, OrdOpRef, RgbIsa, VmContext};
+use crate::vm::{
+    ContractStateAccess, ContractStateEvolve, ExternalAnchor, OpInfo, OrdOpRef, RgbIsa, VmContext,
+};
 use crate::{
     Assign, AssignmentType, Assignments, AssignmentsRef, ExposedSeal, ExposedState, Genesis,
     GlobalState, GlobalStateSchema, GlobalValues, MetaSchema, Metadata, OpId, Operation,
@@ -54,7 +56,7 @@ impl SchemaRules {
         op: OrdOpRef,
         contract_state: Rc<RefCell<S>>,
         prev_state: &'validator BTreeMap<AssignmentType, Vec<RevealedState>>,
-    ) -> Result<(), ValidationError> {
+    ) -> Result<BTreeSet<ExternalAnchor>, ValidationError> {
         let schema = self.schema();
         let types = self.types();
         let opid = op.id();
@@ -123,6 +125,7 @@ impl SchemaRules {
             contract_id: genesis.contract_id(),
             op_info,
             contract_state,
+            pending_external_anchors: RefCell::new(BTreeSet::new()),
         };
 
         // We need to run scripts as the very last step, since before that
@@ -158,11 +161,13 @@ impl SchemaRules {
                 )));
             }
         }
+        // Extract anchors before consuming contract_state
+        let anchors = context.pending_external_anchors.into_inner();
         let contract_state = context.contract_state;
         if contract_state.borrow_mut().evolve_state(op).is_err() {
             return Err(ValidationError::InvalidConsignment(Failure::ContractStateFilled(opid)));
         }
-        Ok(())
+        Ok(anchors)
     }
 }
 

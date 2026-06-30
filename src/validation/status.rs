@@ -266,6 +266,9 @@ pub enum Failure {
     /// operation {0} commits to a script which ID {1} doesn't match the actual one {2}.
     ScriptIDMismatch(OpId, LibId, LibId),
 
+    /// {0} external anchor(s) were not resolved before finalization.
+    ExternalAnchorsPending(usize),
+
     /// Custom error by external services on top of RGB Consensus.
     #[display(inner)]
     Custom(String),

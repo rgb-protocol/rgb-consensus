@@ -38,7 +38,7 @@ use crate::seals::txout::{CloseMethod, Witness};
 use crate::single_use_seals::SealWitness;
 use crate::txout::BlindSeal;
 use crate::validation::{OpoutsDagInfo, SchemaRules, SpvProof};
-use crate::vm::{ContractStateAccess, ContractStateEvolve, OrdOpRef, WitnessOrd};
+use crate::vm::{ContractStateAccess, ContractStateEvolve, ExternalAnchor, OrdOpRef, WitnessOrd};
 use crate::{
     AssignmentType, Assignments, BundleId, ChainNet, ContractId, KnownTransition, OpId, Operation,
     Opout, RevealedState, SchemaId, TransitionBundle,
@@ -221,6 +221,8 @@ pub struct Validator<'consignment, S: ContractStateAccess + ContractStateEvolve,
     opouts_dag_info: Option<RefCell<OpoutsDagInfo>>,
 
     to_resolve: Option<ToResolve>,
+
+    pending_external_anchors: RefCell<BTreeSet<ExternalAnchor>>,
 }
 
 impl<'consignment, S: ContractStateAccess + ContractStateEvolve, C: ConsignmentApi>
@@ -265,6 +267,7 @@ impl<'consignment, S: ContractStateAccess + ContractStateEvolve, C: ConsignmentA
             safe_height: validation_config.safe_height,
             opouts_dag_info,
             to_resolve: None,
+            pending_external_anchors: RefCell::new(BTreeSet::new()),
         }
     }
 
@@ -353,8 +356,29 @@ impl<'consignment, S: ContractStateAccess + ContractStateEvolve, C: ConsignmentA
                 .add_warning(Warning::UnsafeHistory(unsafe_history_map));
         }
 
+        let pending = self.pending_external_anchors.borrow().len();
+        if pending > 0 {
+            return Err(ValidationError::InvalidConsignment(Failure::ExternalAnchorsPending(
+                pending,
+            )));
+        }
+
         // Done. Returning status report with all possible warnings and notifications.
         Ok(self.status.take())
+    }
+
+    /// Returns a snapshot of all external anchors accumulated during Phase 1 that have not yet
+    /// been resolved. BFA callers should verify each anchor externally and then call
+    /// [`Self::record_anchor_resolution`] for it before calling [`Self::finalize_with_resolver`].
+    pub fn pending_external_anchors(&self) -> BTreeSet<ExternalAnchor> {
+        self.pending_external_anchors.borrow().clone()
+    }
+
+    /// Remove a resolved anchor from the pending set.
+    ///
+    /// Call this once the external system (e.g. the Ethereum event log) has confirmed the anchor.
+    pub fn record_anchor_resolution(&mut self, anchor: &ExternalAnchor) -> bool {
+        self.pending_external_anchors.borrow_mut().remove(anchor)
     }
 
     // *** PART I: Validating business logic
@@ -372,12 +396,13 @@ impl<'consignment, S: ContractStateAccess + ContractStateEvolve, C: ConsignmentA
 
         // [VALIDATION]: Validate genesis
         let genesis = self.consignment.genesis().clone();
-        self.schema_rules.validate_state(
+        let anchors = self.schema_rules.validate_state(
             self.consignment.genesis(),
             OrdOpRef::Genesis(&genesis),
             self.contract_state.clone(),
             &BTreeMap::new(),
         )?;
+        self.pending_external_anchors.borrow_mut().extend(anchors);
         let contract_id = genesis.id();
         self.process_assignments(contract_id, None, &genesis.assignments)?;
         Ok(())
@@ -641,12 +666,13 @@ impl<'consignment, S: ContractStateAccess + ContractStateEvolve, C: ConsignmentA
         }
         let witness = Witness::with(witness_tx.clone(), anchor.dbc_proof.clone());
         self.validate_seal_closing(seals, bundle_id, &witness, anchor.mpc_proof.clone())?;
-        self.schema_rules.validate_state(
+        let anchors = self.schema_rules.validate_state(
             self.consignment.genesis(),
             OrdOpRef::Transition(transition, witness.txid, bundle_id),
             self.contract_state.clone(),
             &state_by_type,
         )?;
+        self.pending_external_anchors.borrow_mut().extend(anchors);
         Ok(())
     }
 }

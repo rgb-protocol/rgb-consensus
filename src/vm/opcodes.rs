@@ -47,7 +47,7 @@ pub const INSTR_SVS: u8 = 0b11_010_000;
 pub const INSTR_SAS: u8 = 0b11_010_001;
 pub const INSTR_SPS: u8 = 0b11_010_010;
 pub const INSTR_VTS: u8 = 0b11_010_011;
-// Reserved 0b11_010_100
+pub const INSTR_PMA: u8 = 0b11_010_100;
 
 pub const INSTR_CONTRACT_FROM: u8 = 0b11_000_000;
-pub const INSTR_CONTRACT_TO: u8 = 0b11_010_100;
+pub const INSTR_CONTRACT_TO: u8 = 0b11_010_101;
