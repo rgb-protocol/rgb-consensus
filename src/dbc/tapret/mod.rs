@@ -257,7 +257,7 @@ impl TapretNodePartner {
 #[cfg(feature = "serde")]
 mod leaf_script_serde {
     use bitcoin::taproot::TAPROOT_LEAF_TAPSCRIPT;
-    use hex_conservative::{DisplayHex, FromHex};
+    use hex_conservative::DisplayHex;
     use serde_crate::{Deserialize, Deserializer, Serialize, Serializer};
 
     use super::*;
@@ -304,7 +304,7 @@ mod leaf_script_serde {
         };
         let version = bitcoin::taproot::LeafVersion::from_consensus(byte)
             .map_err(serde_crate::de::Error::custom)?;
-        let script_bytes = Vec::<u8>::from_hex(&data.script)
+        let script_bytes = hex_conservative::decode_to_vec(&data.script)
             .map_err(|e| serde_crate::de::Error::custom(format!("invalid hex in script: {}", e)))?;
         let script = ScriptBuf::from_bytes(script_bytes);
 

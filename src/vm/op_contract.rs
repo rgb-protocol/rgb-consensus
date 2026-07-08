@@ -507,7 +507,7 @@ impl<S: ContractStateAccess> InstructionSet for ContractOp<S> {
                     let transition_id = context.op_info.id.into_inner().into_inner();
                     let msg = Message::from_digest(transition_id);
 
-                    if sig.verify(&msg, &pubkey).is_err() {
+                    if sig.verify(msg, &pubkey).is_err() {
                         fail!()
                     }
                 }

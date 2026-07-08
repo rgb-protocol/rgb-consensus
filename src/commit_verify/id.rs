@@ -21,10 +21,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::Hash;
+use std::io::{self, Write};
 
 use amplify::confinement::{Confined, TinyVec, U64 as U64MAX};
 use amplify::Bytes32;
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 use strict_encoding::{Sizing, StreamWriter, StrictDumb, StrictEncode, StrictType};
 use strict_types::typesys::TypeFqn;
 
@@ -73,7 +74,10 @@ impl CommitEngine {
 
     fn inner_commit_to<T: StrictEncode, const MAX_LEN: usize>(&mut self, value: &T) {
         debug_assert!(!self.finished);
-        let writer = StreamWriter::new::<MAX_LEN>(&mut self.hasher);
+        let mut writer = Sha256Writer {
+            hasher: &mut self.hasher,
+        };
+        let writer = StreamWriter::new::<MAX_LEN>(&mut writer);
         let ok = value.strict_write(writer).is_ok();
         debug_assert!(ok);
     }
@@ -303,4 +307,17 @@ impl CommitmentId for StrictHash {
 
 impl From<Sha256> for StrictHash {
     fn from(hash: Sha256) -> Self { hash.finish().into() }
+}
+
+struct Sha256Writer<'a> {
+    hasher: &'a mut Sha256,
+}
+
+impl Write for Sha256Writer<'_> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.hasher.update(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> { Ok(()) }
 }

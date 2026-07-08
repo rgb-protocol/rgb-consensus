@@ -91,7 +91,7 @@ mod test {
     use amplify::Bytes32;
     use bitcoin::consensus;
     use bitcoin::key::UntweakedPublicKey;
-    use secp256k1::ffi;
+    use bitcoin::secp256k1::ffi;
 
     use super::*;
     use crate::commit_verify::mpc::Commitment;

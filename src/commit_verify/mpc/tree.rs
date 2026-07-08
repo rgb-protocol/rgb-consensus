@@ -115,15 +115,10 @@ mod commit {
         CantFitInMaxSlots(usize),
     }
 
-    /// # Panics
-    ///
-    /// Panics if the crate is compiled without `rand` feature enabled and the
-    /// MultiSource doesn't contain a static entropy.
     impl TryCommitVerify<MultiSource, UntaggedProtocol> for MerkleTree {
         type Error = Error;
 
         fn try_commit(source: &MultiSource) -> Result<Self, Error> {
-            #[cfg(feature = "rand")]
             use rand::{rng, RngCore};
 
             let msg_count = source.messages.len();
@@ -135,13 +130,7 @@ mod commit {
                 return Err(Error::TooManyMessages(msg_count));
             }
 
-            #[cfg(feature = "rand")]
             let entropy = source.static_entropy.unwrap_or_else(|| rng().next_u64());
-            #[cfg(not(feature = "rand"))]
-            let entropy = source.static_entropy.expect(
-                "rand feature for crate rgb-consensus must be enabled if static entropy \
-                 information is not provided in MultiSource",
-            );
 
             let mut map = BTreeMap::<u32, (ProtocolId, Message)>::new();
 
