@@ -251,18 +251,6 @@ impl MerkleBlock {
         message: Message,
     ) -> Result<Self, InvalidProof> {
         let path = proof.as_path();
-
-        // an over-long path can be decoded from untrusted input, reject it
-        // here instead of letting the u5 conversion below panic
-        if path.len() > u5::MAX.to_u8() as usize {
-            return Err(InvalidProof {
-                protocol_id,
-                expected: 0,
-                actual: proof.pos,
-                width: 0,
-            });
-        }
-
         let mut pos = proof.pos;
         let mut width_limit = proof.width_limit();
 
