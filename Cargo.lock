@@ -824,7 +824,7 @@ dependencies = [
 
 [[package]]
 name = "rgb-consensus"
-version = "0.11.1-rc.10"
+version = "0.11.1-rc.11"
 dependencies = [
  "amplify",
  "baid64",
