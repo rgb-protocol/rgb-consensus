@@ -790,8 +790,9 @@ dependencies = [
 
 [[package]]
 name = "rgb-aluvm"
-version = "0.11.1-rc.3"
-source = "git+https://github.com/rgb-protocol/rgb-aluvm?branch=master#33c90d6527dc3b24c8b224434050a89da48067ac"
+version = "0.11.1-rc.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dcf4d92478fcff567ff0bd9f18684fd954f8426c74f16e5517254b0a2d34023a"
 dependencies = [
  "amplify",
  "baid64",
@@ -810,8 +811,9 @@ dependencies = [
 
 [[package]]
 name = "rgb-ascii-armor"
-version = "1.0.1"
-source = "git+https://github.com/rgb-protocol/rgb-ascii-armor?branch=master#2c09ddd34c0889fe2f7cca71e9465b973f1abc6a"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fcde5a129540e5911c24930fd854ea658a715b50a690d254273088f907a63516"
 dependencies = [
  "amplify",
  "baid64",
@@ -848,8 +850,9 @@ dependencies = [
 
 [[package]]
 name = "rgb-strict-encoding"
-version = "1.0.1"
-source = "git+https://github.com/rgb-protocol/rgb-strict-encoding?branch=master#c3b7bab84fd148b0db4c9811cf4b92b8cf46c39e"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f68326e14d4b627f86634ea324510135cb551e27c5583a74811fa230b0cf34d"
 dependencies = [
  "amplify",
  "bitcoin",
@@ -860,8 +863,9 @@ dependencies = [
 
 [[package]]
 name = "rgb-strict-encoding-derive"
-version = "1.0.1"
-source = "git+https://github.com/rgb-protocol/rgb-strict-encoding?branch=master#c3b7bab84fd148b0db4c9811cf4b92b8cf46c39e"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33367536cfef03cb582cd9f8f25e193c2298d3ec3112eb59018a376b465f1ed9"
 dependencies = [
  "amplify_syn",
  "heck",
@@ -872,8 +876,9 @@ dependencies = [
 
 [[package]]
 name = "rgb-strict-types"
-version = "1.0.1"
-source = "git+https://github.com/rgb-protocol/rgb-strict-types?branch=master#c7c029867384868f64700334fc38098b7d3685c4"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e920bdf61b662a3743572a03696b0d88992eeb7d4f7afa0902915968327b3ce6"
 dependencies = [
  "amplify",
  "baid64",
