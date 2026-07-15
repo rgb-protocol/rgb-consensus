@@ -89,3 +89,9 @@ wasm-bindgen-test = "0.3"
 
 [package.metadata.docs.rs]
 features = ["all"]
+
+[patch.crates-io]
+rgb-strict-encoding = { git = "https://github.com/rgb-protocol/rgb-strict-encoding", branch = "master" }
+rgb-ascii-armor = { git = "https://github.com/rgb-protocol/rgb-ascii-armor", branch = "master" }
+rgb-strict-types = { git = "https://github.com/rgb-protocol/rgb-strict-types", branch = "master" }
+rgb-aluvm = { git = "https://github.com/rgb-protocol/rgb-aluvm", branch = "master" }
