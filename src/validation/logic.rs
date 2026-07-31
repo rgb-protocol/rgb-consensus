@@ -35,7 +35,7 @@ use strict_types::TypeSystem;
 use super::validator::ValidationError;
 use super::Failure;
 use crate::schema::{AssignmentsSchema, GlobalSchema};
-use crate::validation::Scripts;
+use crate::validation::SchemaRules;
 use crate::vm::{ContractStateAccess, ContractStateEvolve, OpInfo, OrdOpRef, RgbIsa, VmContext};
 use crate::{
     Assign, AssignmentType, Assignments, AssignmentsRef, ExposedSeal, ExposedState, Genesis,
@@ -43,16 +43,20 @@ use crate::{
     OwnedStateSchema, RevealedState, Schema, SealClosingStrategy, Transition, TypedAssigns,
 };
 
-impl Schema {
+impl SchemaRules {
+    /// Checks an operation against the schema and runs its validator script.
+    ///
+    /// The schema, the type system and the AluVM libraries are the ones these
+    /// rules were verified with, so they cannot be mismatched with each other.
     pub fn validate_state<'validator, S: ContractStateAccess + ContractStateEvolve>(
         &'validator self,
-        consignment_types: &'validator TypeSystem,
-        consignment_scripts: &'validator Scripts,
         genesis: &'validator Genesis,
         op: OrdOpRef,
         contract_state: Rc<RefCell<S>>,
         prev_state: &'validator BTreeMap<AssignmentType, Vec<RevealedState>>,
     ) -> Result<(), ValidationError> {
+        let schema = self.schema();
+        let types = self.types();
         let opid = op.id();
 
         let empty_assign_schema = AssignmentsSchema::default();
@@ -68,11 +72,11 @@ impl Schema {
                     ));
                 }
                 (
-                    &self.genesis.metadata,
-                    &self.genesis.globals,
+                    &schema.genesis.metadata,
+                    &schema.genesis.globals,
                     &empty_assign_schema,
-                    &self.genesis.assignments,
-                    self.genesis.validator,
+                    &schema.genesis.assignments,
+                    schema.genesis.validator,
                     None::<u16>,
                 )
             }
@@ -82,7 +86,7 @@ impl Schema {
                 },
                 ..,
             ) => {
-                let transition_schema = match self.transitions.get(transition_type) {
+                let transition_schema = match schema.transitions.get(transition_type) {
                     None => {
                         return Err(ValidationError::InvalidConsignment(
                             Failure::SchemaUnknownTransitionType(opid, *transition_type),
@@ -102,15 +106,15 @@ impl Schema {
             }
         };
 
-        self.validate_metadata(opid, op.metadata(), metadata_schema, consignment_types)?;
-        self.validate_global_state(opid, op.globals(), global_schema, consignment_types)?;
-        self.validate_prev_state(opid, prev_state, owned_schema)?;
+        schema.validate_metadata(opid, op.metadata(), metadata_schema, types)?;
+        schema.validate_global_state(opid, op.globals(), global_schema, types)?;
+        schema.validate_prev_state(opid, prev_state, owned_schema)?;
         match op.assignments() {
             AssignmentsRef::Genesis(assignments) => {
-                self.validate_new_state(opid, assignments, assign_schema, consignment_types)?
+                schema.validate_new_state(opid, assignments, assign_schema, types)?
             }
             AssignmentsRef::Graph(assignments) => {
-                self.validate_new_state(opid, assignments, assign_schema, consignment_types)?
+                schema.validate_new_state(opid, assignments, assign_schema, types)?
             }
         };
 
@@ -125,7 +129,7 @@ impl Schema {
         // we need to make sure that the operation data match the schema, so
         // scripts are not required to validate the structure of the state
         if let Some(validator) = validator {
-            let scripts = consignment_scripts;
+            let scripts = self.scripts();
             let mut vm = Vm::<Instr<RgbIsa<S>>>::new();
             if let Some(ty) = ty {
                 vm.registers.set_n(RegA::A16, Reg32::Reg0, ty);
@@ -160,7 +164,9 @@ impl Schema {
         }
         Ok(())
     }
+}
 
+impl Schema {
     fn validate_metadata(
         &self,
         opid: OpId,

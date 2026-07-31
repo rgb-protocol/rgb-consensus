@@ -27,7 +27,7 @@ use std::fmt::{self, Display, Formatter};
 use aluvm::library::LibId;
 use amplify::num::u24;
 use bitcoin::{OutPoint, Txid};
-use strict_types::{SemId, Ty};
+use strict_types::SemId;
 
 use crate::commit_verify::mpc::InvalidProof;
 use crate::schema::{self, SchemaId};
@@ -143,8 +143,6 @@ pub enum Failure {
         actual: SchemaId,
     },
 
-    /// type with sem_id {0} does not match the trusted one {1:?} (found {2})
-    TypeSystemMismatch(SemId, Box<Option<Ty<SemId>>>, Box<Ty<SemId>>),
     /// schema global state #{0} uses semantic data type absent in type library
     /// ({1}).
     SchemaGlobalSemIdUnknown(schema::GlobalStateType, SemId),

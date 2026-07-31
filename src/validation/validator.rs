@@ -25,9 +25,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::num::NonZeroU32;
 use std::rc::Rc;
 
-use amplify::confinement::{Collection, ConfinedOrdMap};
+use amplify::confinement::Collection;
 use bitcoin::{Transaction as Tx, Txid};
-use strict_types::TypeSystem;
 
 use super::status::{Failure, Warning};
 use super::{CheckedConsignment, ConsignmentApi, DbcProof, Status};
@@ -38,7 +37,7 @@ use crate::operation::seal::ExposedSeal;
 use crate::seals::txout::{CloseMethod, Witness};
 use crate::single_use_seals::SealWitness;
 use crate::txout::BlindSeal;
-use crate::validation::{OpoutsDagInfo, Scripts};
+use crate::validation::{OpoutsDagInfo, SchemaRules};
 use crate::vm::{ContractStateAccess, ContractStateEvolve, OrdOpRef, WitnessOrd, WitnessPos};
 use crate::{
     AssignmentType, Assignments, BundleId, ChainNet, ContractId, KnownTransition, OpId, Operation,
@@ -195,7 +194,6 @@ impl<R: ResolveWitness> ResolveWitness for CheckedWitnessResolver<R> {
 pub struct ValidationConfig {
     pub chain_net: ChainNet,
     pub safe_height: Option<NonZeroU32>,
-    pub trusted_typesystem: TypeSystem,
     pub build_opouts_dag: bool,
 }
 
@@ -210,10 +208,10 @@ pub struct Validator<
 
     status: RefCell<Status>,
 
+    schema_rules: &'consignment SchemaRules,
     schema_id: SchemaId,
     contract_id: ContractId,
     chain_net: ChainNet,
-    scripts: Scripts,
 
     contract_state: Rc<RefCell<S>>,
 
@@ -224,7 +222,6 @@ pub struct Validator<
     // Operations in this set will not be validated
     resolver: CheckedWitnessResolver<&'resolver R>,
     safe_height: Option<NonZeroU32>,
-    trusted_typesystem: TypeSystem,
     opouts_dag_info: Option<RefCell<OpoutsDagInfo>>,
 }
 
@@ -238,6 +235,7 @@ impl<
 {
     fn init(
         consignment: &'consignment C,
+        schema_rules: &'consignment SchemaRules,
         resolver: &'resolver R,
         context: S::Context<'_>,
         validation_config: &ValidationConfig,
@@ -252,8 +250,6 @@ impl<
         let contract_id = genesis.contract_id();
         let schema_id = genesis.schema_id;
         let chain_net = genesis.chain_net;
-        let scripts =
-            ConfinedOrdMap::from_iter_checked(consignment.scripts().map(|s| (s.id(), s.clone())));
 
         let input_opouts = RefCell::new(BTreeSet::<Opout>::new());
 
@@ -267,16 +263,15 @@ impl<
         Self {
             consignment,
             status: RefCell::new(status),
+            schema_rules,
             schema_id,
             contract_id,
             chain_net,
-            scripts,
             input_opouts,
             opout_assigns,
             resolver: CheckedWitnessResolver::from(resolver),
             contract_state: Rc::new(RefCell::new(S::init(context))),
             safe_height: validation_config.safe_height,
-            trusted_typesystem: validation_config.trusted_typesystem.clone(),
             opouts_dag_info,
         }
     }
@@ -287,11 +282,13 @@ impl<
     /// failures, warnings and additional information.
     pub fn validate(
         consignment: &'consignment C,
+        schema_rules: &'consignment SchemaRules,
         resolver: &'resolver R,
         context: S::Context<'_>,
         validation_config: &ValidationConfig,
     ) -> Result<Status, ValidationError> {
-        let mut validator = Self::init(consignment, resolver, context, validation_config);
+        let mut validator =
+            Self::init(consignment, schema_rules, resolver, context, validation_config);
         // If the chain-network pair doesn't match there is no point in validating the contract
         // since all witness transactions will be missed.
         if validator.chain_net != validation_config.chain_net {
@@ -303,8 +300,6 @@ impl<
             return Err(ValidationError::ResolverError(e));
         }
 
-        validator.validate_schema()?;
-
         validator.validate_genesis()?;
 
         validator.validate_bundles()?;
@@ -313,25 +308,9 @@ impl<
         Ok(validator.status.into_inner())
     }
 
-    // *** PART I: Schema validation
-    fn validate_schema(&mut self) -> Result<(), ValidationError> {
-        for (sem_id, consignment_type) in self.consignment.types().iter() {
-            let trusted_type = self.trusted_typesystem.get(*sem_id);
-            if trusted_type != Some(consignment_type) {
-                return Err(ValidationError::InvalidConsignment(Failure::TypeSystemMismatch(
-                    *sem_id,
-                    Box::new(trusted_type.cloned()),
-                    Box::new(consignment_type.clone()),
-                )));
-            }
-        }
-        self.consignment.schema().verify(&self.trusted_typesystem)?;
-        Ok(())
-    }
-
-    // *** PART II: Validating business logic
+    // *** PART I: Validating business logic
     fn validate_genesis(&mut self) -> Result<(), ValidationError> {
-        let schema = self.consignment.schema();
+        let schema = self.schema_rules.schema();
 
         // [VALIDATION]: Making sure that we were supplied with the schema
         //               that corresponds to the schema of the contract genesis
@@ -344,9 +323,7 @@ impl<
 
         // [VALIDATION]: Validate genesis
         let genesis = self.consignment.genesis().clone();
-        schema.validate_state(
-            &self.trusted_typesystem,
-            &self.scripts,
+        self.schema_rules.validate_state(
             self.consignment.genesis(),
             OrdOpRef::Genesis(&genesis),
             self.contract_state.clone(),
@@ -384,7 +361,7 @@ impl<
         Ok(())
     }
 
-    // *** PART III: Validating single-use-seals
+    // *** PART II: Validating single-use-seals
     fn validate_bundles(&mut self) -> Result<(), ValidationError> {
         let mut unsafe_history_map: HashMap<u32, HashSet<Txid>> = HashMap::new();
         // Owned copy of the history terminals, drained as we visit the bundles they
@@ -642,9 +619,7 @@ impl<
         }
         let witness = Witness::with(witness_tx.clone(), anchor.dbc_proof.clone());
         self.validate_seal_closing(seals, bundle_id, &witness, anchor.mpc_proof.clone())?;
-        self.consignment.schema().validate_state(
-            &self.trusted_typesystem,
-            &self.scripts,
+        self.schema_rules.validate_state(
             self.consignment.genesis(),
             OrdOpRef::Transition(transition, witness.txid, *witness_ord, bundle_id),
             self.contract_state.clone(),

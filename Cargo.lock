@@ -806,6 +806,7 @@ dependencies = [
  "hex-conservative 1.3.0",
  "rand 0.9.5",
  "rgb-aluvm",
+ "rgb-ascii-armor",
  "rgb-strict-encoding",
  "rgb-strict-types",
  "ripemd",

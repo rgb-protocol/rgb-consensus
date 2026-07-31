@@ -21,6 +21,7 @@
 // limitations under the License.
 
 mod schema;
+mod schema_def;
 mod logic;
 mod opouts_dag;
 mod spv;
@@ -32,6 +33,9 @@ mod commitments;
 pub use commitments::{DbcError, DbcProof, EAnchor};
 pub use consignment::{CheckedConsignment, ConsignmentApi, OpRef, Scripts, CONSIGNMENT_MAX_LIBS};
 pub use opouts_dag::{OpoutsDag, OpoutsDagData, OpoutsDagIndex, OpoutsDagInfo};
+pub use schema_def::{
+    SchemaDefError, SchemaDefinition, SchemaRules, TypeLibs, SCHEMA_MAX_TYPE_LIBS,
+};
 pub use spv::{SpvProof, SpvValidationError};
 pub use status::{Failure, Info, Status, UnsafeHistoryMap, Validity, Warning};
 pub use validator::{

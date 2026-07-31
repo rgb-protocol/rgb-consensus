@@ -28,14 +28,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use aluvm::library::{Lib, LibId};
 use amplify::confinement::ConfinedOrdMap;
 use bitcoin::Transaction as Tx;
-use strict_types::TypeSystem;
 
 use super::spv::SpvProof;
 use super::EAnchor;
 use crate::{
     AssignmentType, AssignmentsRef, BuilderSeal, BundleId, ContractId, Genesis, GlobalState,
-    GraphSeal, Metadata, OpFullType, OpId, Operation, Schema, Transition, TransitionBundle,
-    TypedAssigns,
+    GraphSeal, Metadata, OpFullType, OpId, Operation, Transition, TransitionBundle, TypedAssigns,
 };
 
 pub const CONSIGNMENT_MAX_LIBS: usize = 1024;
@@ -115,12 +113,6 @@ impl<'consignment, C: ConsignmentApi> CheckedConsignment<'consignment, C> {
 }
 
 impl<C: ConsignmentApi> ConsignmentApi for CheckedConsignment<'_, C> {
-    fn schema(&self) -> &Schema { self.0.schema() }
-
-    fn types(&self) -> &TypeSystem { self.0.types() }
-
-    fn scripts(&self) -> impl Iterator<Item = &Lib> { self.0.scripts() }
-
     fn genesis(&self) -> &Genesis { self.0.genesis() }
 
     fn bundles_info(
@@ -142,16 +134,6 @@ impl<C: ConsignmentApi> ConsignmentApi for CheckedConsignment<'_, C> {
 /// invalid or absent data, the API must always return [`None`] or empty
 /// collections/iterators.
 pub trait ConsignmentApi {
-    /// Returns reference to the schema object used by the consignment.
-    fn schema(&self) -> &Schema;
-
-    /// Returns reference to the type system.
-    fn types(&self) -> &TypeSystem;
-
-    /// Returns reference to a collection of AluVM libraries used for the
-    /// validation.
-    fn scripts(&self) -> impl Iterator<Item = &Lib>;
-
     /// Contract genesis.
     fn genesis(&self) -> &Genesis;
 

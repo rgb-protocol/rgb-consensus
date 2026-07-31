@@ -115,8 +115,11 @@ pub fn rgb_contract_id_stl() -> TypeLib {
 /// Generates strict type library providing data types for RGB consensus.
 pub fn rgb_logic_stl() -> TypeLib {
     LibBuilder::with(libname!(LIB_NAME_RGB_LOGIC), [
+        std_stl().to_dependency_types(),
+        strict_types_stl().to_dependency_types(),
         bitcoin_stl().to_dependency_types(),
         bp_core_stl().to_dependency_types(),
+        aluvm_stl().to_dependency_types(),
         rgb_commit_stl().to_dependency_types(),
     ])
     .transpile::<DbcProof>()

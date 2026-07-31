@@ -24,6 +24,7 @@ rgb-aluvm = { version = "~0.11.1", features = [
 amplify = { version = "=4.8.1", features = [
     "rand",
 ] }
+rgb-ascii-armor = "1.0.2"
 baid64 = "=0.4.1"
 base85 = "=2.0.0"
 bitcoin = { version = "0.32.101", features = [
