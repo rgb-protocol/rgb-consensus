@@ -293,7 +293,7 @@ impl<
                 )));
             }
         }
-        self.consignment.schema().verify(self.consignment.types())?;
+        self.consignment.schema().verify(&self.trusted_typesystem)?;
         Ok(())
     }
 
@@ -313,7 +313,7 @@ impl<
         // [VALIDATION]: Validate genesis
         let genesis = self.consignment.genesis().clone();
         schema.validate_state(
-            self.consignment.types(),
+            &self.trusted_typesystem,
             &self.scripts,
             self.consignment.genesis(),
             OrdOpRef::Genesis(&genesis),
@@ -544,7 +544,7 @@ impl<
         let witness = Witness::with(witness_tx.clone(), anchor.dbc_proof.clone());
         self.validate_seal_closing(seals, bundle_id, &witness, anchor.mpc_proof.clone())?;
         self.consignment.schema().validate_state(
-            self.consignment.types(),
+            &self.trusted_typesystem,
             &self.scripts,
             self.consignment.genesis(),
             OrdOpRef::Transition(transition, witness.txid, *witness_ord, bundle_id),
