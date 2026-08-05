@@ -39,7 +39,7 @@ use crate::seals::txout::{CloseMethod, Witness};
 use crate::single_use_seals::SealWitness;
 use crate::txout::BlindSeal;
 use crate::validation::{OpoutsDagInfo, Scripts};
-use crate::vm::{ContractStateAccess, ContractStateEvolve, OrdOpRef, WitnessOrd};
+use crate::vm::{ContractStateAccess, ContractStateEvolve, OrdOpRef, WitnessOrd, WitnessPos};
 use crate::{
     AssignmentType, Assignments, BundleId, ChainNet, ContractId, KnownTransition, OpId, Operation,
     Opout, RevealedState, SchemaId, TransitionBundle,
@@ -78,6 +78,8 @@ pub enum WitnessResolverError {
     InvalidResolverData,
     /// resolver is for another chain-network pair
     WrongChainNet,
+    /// operation is not supported by this resolver
+    NotSupported,
 }
 
 /// Trait to provide the [`WitnessOrd`] for a specific TX.
@@ -90,6 +92,22 @@ pub trait WitnessOrdProvider {
 pub trait ResolveWitness {
     /// Provide the [`WitnessStatus`] for a TX with the given `witness_id`.
     fn resolve_witness(&self, witness_id: Txid) -> Result<WitnessStatus, WitnessResolverError>;
+
+    /// Fetch the header of the block at `height` in the best chain. Used by the
+    /// validator to verify SPV proofs without retrieving the witness TX itself.
+    ///
+    /// The returned header must be the one at `height` in the best known chain:
+    /// this is what an SPV proof is checked against, so a resolver which serves a
+    /// header from a stale block would accept proofs a reorg has invalidated.
+    ///
+    /// Returns `Err(NotSupported)` by default; resolvers that support header
+    /// fetching should override this method.
+    fn get_block_header(
+        &self,
+        _height: NonZeroU32,
+    ) -> Result<bitcoin::block::Header, WitnessResolverError> {
+        Err(WitnessResolverError::NotSupported)
+    }
 
     /// Check that the resolver works with the expected [`ChainNet`].
     fn check_chain_net(&self, chain_net: ChainNet) -> Result<(), WitnessResolverError>;
@@ -125,6 +143,13 @@ impl<T: ResolveWitness> ResolveWitness for &T {
         ResolveWitness::resolve_witness(*self, witness_id)
     }
 
+    fn get_block_header(
+        &self,
+        height: NonZeroU32,
+    ) -> Result<bitcoin::block::Header, WitnessResolverError> {
+        ResolveWitness::get_block_header(*self, height)
+    }
+
     fn check_chain_net(&self, chain_net: ChainNet) -> Result<(), WitnessResolverError> {
         ResolveWitness::check_chain_net(*self, chain_net)
     }
@@ -152,6 +177,13 @@ impl<R: ResolveWitness> ResolveWitness for CheckedWitnessResolver<R> {
             }
         }
         Ok(witness_status)
+    }
+
+    fn get_block_header(
+        &self,
+        height: NonZeroU32,
+    ) -> Result<bitcoin::block::Header, WitnessResolverError> {
+        self.inner.get_block_header(height)
     }
 
     fn check_chain_net(&self, chain_net: ChainNet) -> Result<(), WitnessResolverError> {
@@ -355,9 +387,10 @@ impl<
     // *** PART III: Validating single-use-seals
     fn validate_bundles(&mut self) -> Result<(), ValidationError> {
         let mut unsafe_history_map: HashMap<u32, HashSet<Txid>> = HashMap::new();
-        for (bundle, anchor, witness_id) in self.consignment.bundles_info() {
+        for (bundle, anchor, tx, spv_proof) in self.consignment.bundles_info() {
             let bundle_id = bundle.bundle_id();
-            let (witness_tx, witness_ord) = self.resolve_witness(bundle_id, witness_id)?;
+            let witness_id = tx.compute_txid();
+            let (witness_tx, witness_ord) = self.resolve_witness(bundle_id, tx, spv_proof)?;
             if let Some(safe_height) = self.safe_height {
                 match witness_ord {
                     WitnessOrd::Mined(witness_pos) => {
@@ -403,26 +436,55 @@ impl<
     fn resolve_witness(
         &self,
         bundle_id: BundleId,
-        witness_id: Txid,
+        tx: &Tx,
+        spv_proof_opt: Option<&super::spv::SpvProof>,
     ) -> Result<(Tx, WitnessOrd), ValidationError> {
-        match self.resolver.resolve_witness(witness_id) {
-            Err(err) => {
-                // Unable to retrieve the corresponding transaction from the resolver.
-                // Reporting this incident immediately.
-                Err(ValidationError::ResolverError(err))
-            }
-            Ok(witness_status) => match witness_status {
-                WitnessStatus::Resolved(tx, ord) if ord != WitnessOrd::Archived => {
-                    self.status
-                        .borrow_mut()
-                        .tx_ord_map
-                        .insert(tx.compute_txid(), ord);
-                    Ok((tx, ord))
+        let witness_id = tx.compute_txid();
+        if let Some(spv_proof) = spv_proof_opt {
+            match self.resolver.get_block_header(spv_proof.block_height) {
+                Ok(header) => {
+                    let witness_pos = spv_proof.validate(witness_id, &header).ok().and_then(|_| {
+                        WitnessPos::with(
+                            self.chain_net.layer1(),
+                            spv_proof.block_height,
+                            header.time as i64,
+                        )
+                    });
+                    match witness_pos {
+                        Some(witness_pos) => {
+                            let ord = WitnessOrd::Mined(witness_pos);
+                            self.status.borrow_mut().tx_ord_map.insert(witness_id, ord);
+                            return Ok((tx.clone(), ord));
+                        }
+                        // A proof which does not verify is not a reason to reject the
+                        // consignment: the header is the one at the proof's height in the
+                        // resolver's best chain, so a reorg which moved the witness
+                        // elsewhere invalidates a proof the sender stored in good faith.
+                        // Carrying no proof at all is legal anyway, so the regular path is
+                        // always reachable and refusing to take it here would only ever
+                        // reject transfers which are otherwise valid.
+                        None => {
+                            self.status
+                                .borrow_mut()
+                                .add_warning(Warning::InvalidSpvProof(bundle_id, witness_id));
+                        }
+                    }
                 }
-                _ => Err(ValidationError::InvalidConsignment(Failure::SealNoPubWitness(
-                    bundle_id, witness_id,
-                ))),
-            },
+                Err(WitnessResolverError::NotSupported) => { /* fall through to regular path */ }
+                Err(err) => return Err(ValidationError::ResolverError(err)),
+            }
+        }
+
+        // Regular path: ask the resolver to fetch the tx and determine its ordering.
+        match self.resolver.resolve_witness(witness_id) {
+            Err(err) => Err(ValidationError::ResolverError(err)),
+            Ok(WitnessStatus::Resolved(tx, ord)) if ord != WitnessOrd::Archived => {
+                self.status.borrow_mut().tx_ord_map.insert(witness_id, ord);
+                Ok((tx, ord))
+            }
+            _ => Err(ValidationError::InvalidConsignment(Failure::SealNoPubWitness(
+                bundle_id, witness_id,
+            ))),
         }
     }
 
@@ -552,5 +614,72 @@ impl<
             &state_by_type,
         )?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use bitcoin::block::{Header, Version};
+    use bitcoin::hashes::Hash;
+    use bitcoin::{BlockHash, CompactTarget, TxMerkleNode};
+
+    use super::*;
+
+    fn header() -> Header {
+        Header {
+            version: Version::ONE,
+            prev_blockhash: BlockHash::all_zeros(),
+            merkle_root: TxMerkleNode::all_zeros(),
+            time: 1231006505,
+            bits: CompactTarget::from_consensus(0x1d00ffff),
+            nonce: 0,
+        }
+    }
+
+    /// Resolver whose backend cannot serve block headers, hence not overriding
+    /// [`ResolveWitness::get_block_header`].
+    struct NoHeaders;
+    impl ResolveWitness for NoHeaders {
+        fn resolve_witness(&self, _: Txid) -> Result<WitnessStatus, WitnessResolverError> {
+            Ok(WitnessStatus::Unresolved)
+        }
+        fn check_chain_net(&self, _: ChainNet) -> Result<(), WitnessResolverError> { Ok(()) }
+    }
+
+    /// Resolver which can serve block headers, hence able to verify SPV proofs.
+    struct WithHeaders;
+    impl ResolveWitness for WithHeaders {
+        fn resolve_witness(&self, _: Txid) -> Result<WitnessStatus, WitnessResolverError> {
+            Ok(WitnessStatus::Unresolved)
+        }
+        fn get_block_header(&self, _: NonZeroU32) -> Result<Header, WitnessResolverError> {
+            Ok(header())
+        }
+        fn check_chain_net(&self, _: ChainNet) -> Result<(), WitnessResolverError> { Ok(()) }
+    }
+
+    fn get_block_header<R: ResolveWitness>(resolver: R) -> Result<Header, WitnessResolverError> {
+        resolver.get_block_header(NonZeroU32::MIN)
+    }
+
+    #[test]
+    fn header_support_is_opt_in() {
+        assert_eq!(get_block_header(NoHeaders), Err(WitnessResolverError::NotSupported));
+        assert_eq!(get_block_header(WithHeaders), Ok(header()));
+    }
+
+    #[test]
+    fn reference_forwards_header_support() {
+        assert_eq!(get_block_header(&NoHeaders), Err(WitnessResolverError::NotSupported));
+        assert_eq!(get_block_header(&WithHeaders), Ok(header()));
+    }
+
+    #[test]
+    fn checked_resolver_forwards_header_support() {
+        assert_eq!(
+            get_block_header(CheckedWitnessResolver::from(NoHeaders)),
+            Err(WitnessResolverError::NotSupported)
+        );
+        assert_eq!(get_block_header(CheckedWitnessResolver::from(WithHeaders)), Ok(header()));
     }
 }

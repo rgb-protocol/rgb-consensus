@@ -183,7 +183,7 @@ impl WitnessPos {
         Self::bitcoin(height, timestamp)
     }
 
-    pub(crate) fn with(layer1: Layer1, height: NonZeroU32, timestamp: i64) -> Option<Self> {
+    pub fn with(layer1: Layer1, height: NonZeroU32, timestamp: i64) -> Option<Self> {
         if timestamp < layer1.genesis_timestamp() {
             return None;
         }

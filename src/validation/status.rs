@@ -278,6 +278,10 @@ pub enum Warning {
     /// Map of transfer history TXs with potentially unsafe height.
     UnsafeHistory(UnsafeHistoryMap),
 
+    /// bundle {0} SPV proof for witness {1} is invalid; the witness was resolved without
+    /// it.
+    InvalidSpvProof(BundleId, Txid),
+
     /// Custom warning by external services on top of RGB Consensus.
     #[display(inner)]
     Custom(String),

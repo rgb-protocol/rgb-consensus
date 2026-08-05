@@ -27,9 +27,10 @@ use std::collections::BTreeSet;
 
 use aluvm::library::{Lib, LibId};
 use amplify::confinement::ConfinedOrdMap;
-use bitcoin::Txid;
+use bitcoin::Transaction as Tx;
 use strict_types::TypeSystem;
 
+use super::spv::SpvProof;
 use super::EAnchor;
 use crate::{
     AssignmentType, AssignmentsRef, BundleId, ContractId, Genesis, GlobalState, GraphSeal,
@@ -121,7 +122,9 @@ impl<C: ConsignmentApi> ConsignmentApi for CheckedConsignment<'_, C> {
 
     fn genesis(&self) -> &Genesis { self.0.genesis() }
 
-    fn bundles_info(&self) -> impl Iterator<Item = (&TransitionBundle, &EAnchor, Txid)> {
+    fn bundles_info(
+        &self,
+    ) -> impl Iterator<Item = (&TransitionBundle, &EAnchor, &Tx, Option<&SpvProof>)> {
         self.0.bundles_info()
     }
 }
@@ -147,13 +150,15 @@ pub trait ConsignmentApi {
     /// Contract genesis.
     fn genesis(&self) -> &Genesis;
 
-    /// Returns iterator over all bundle information in the consignment
-    fn bundles_info(&self) -> impl Iterator<Item = (&TransitionBundle, &EAnchor, Txid)>;
+    /// Returns iterator over all bundle information in the consignment.
+    fn bundles_info(
+        &self,
+    ) -> impl Iterator<Item = (&TransitionBundle, &EAnchor, &Tx, Option<&SpvProof>)>;
 
     /// Returns iterator over all bundle ids present in the consignment.
     fn bundle_ids<'iter>(&self) -> impl Iterator<Item = BundleId> + 'iter {
         self.bundles_info()
-            .map(|(b, _, _)| b.bundle_id())
+            .map(|(b, _, _, _)| b.bundle_id())
             .collect::<BTreeSet<_>>()
             .into_iter()
     }

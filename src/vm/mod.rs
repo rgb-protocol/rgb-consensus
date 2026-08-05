@@ -33,8 +33,8 @@ mod contract;
 
 pub use aluvm::aluasm_isa;
 pub use contract::{
-    ContractStateAccess, ContractStateEvolve, GlobalOrd, GlobalStateEntry, GlobalsIter, OpOrd,
-    OrdOpRef, UnknownGlobalStateType, WitnessOrd, WitnessPos,
+    BlockHeight, ContractStateAccess, ContractStateEvolve, GlobalOrd, GlobalStateEntry,
+    GlobalsIter, OpOrd, OrdOpRef, UnknownGlobalStateType, WitnessOrd, WitnessPos,
 };
 pub(crate) use contract::{OpInfo, VmContext};
 pub use isa::RgbIsa;

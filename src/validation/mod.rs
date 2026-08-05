@@ -23,6 +23,7 @@
 mod schema;
 mod logic;
 mod opouts_dag;
+mod spv;
 mod validator;
 mod consignment;
 mod status;
@@ -31,6 +32,7 @@ mod commitments;
 pub use commitments::{DbcError, DbcProof, EAnchor};
 pub use consignment::{CheckedConsignment, ConsignmentApi, OpRef, Scripts, CONSIGNMENT_MAX_LIBS};
 pub use opouts_dag::{OpoutsDag, OpoutsDagData, OpoutsDagIndex, OpoutsDagInfo};
+pub use spv::{SpvProof, SpvValidationError};
 pub use status::{Failure, Info, Status, UnsafeHistoryMap, Validity, Warning};
 pub use validator::{
     ResolveWitness, ValidationConfig, ValidationError, Validator, WitnessOrdProvider,
