@@ -174,12 +174,6 @@ impl StrictDumb for WitnessPos {
     }
 }
 
-// Sat Jan 03 18:15:05 2009 UTC
-const BITCOIN_GENESIS_TIMESTAMP: i64 = 1231006505;
-
-// Sat Jan 03 18:15:05 2009 UTC
-const LIQUID_GENESIS_TIMESTAMP: i64 = 1296692202;
-
 impl WitnessPos {
     #[deprecated(
         since = "0.11.0-beta.9",
@@ -189,26 +183,23 @@ impl WitnessPos {
         Self::bitcoin(height, timestamp)
     }
 
-    pub fn bitcoin(height: NonZeroU32, timestamp: i64) -> Option<Self> {
-        if timestamp < BITCOIN_GENESIS_TIMESTAMP {
+    pub(crate) fn with(layer1: Layer1, height: NonZeroU32, timestamp: i64) -> Option<Self> {
+        if timestamp < layer1.genesis_timestamp() {
             return None;
         }
         Some(WitnessPos {
-            layer1: Layer1::Bitcoin,
+            layer1,
             height,
             timestamp,
         })
     }
 
+    pub fn bitcoin(height: NonZeroU32, timestamp: i64) -> Option<Self> {
+        Self::with(Layer1::Bitcoin, height, timestamp)
+    }
+
     pub fn liquid(height: NonZeroU32, timestamp: i64) -> Option<Self> {
-        if timestamp < LIQUID_GENESIS_TIMESTAMP {
-            return None;
-        }
-        Some(WitnessPos {
-            layer1: Layer1::Liquid,
-            height,
-            timestamp,
-        })
+        Self::with(Layer1::Liquid, height, timestamp)
     }
 }
 
@@ -472,24 +463,31 @@ mod test {
 
     #[test]
     fn witness_post_timestamp() {
-        assert_eq!(WitnessPos::bitcoin(NonZeroU32::MIN, BITCOIN_GENESIS_TIMESTAMP - 1), None);
-        assert_eq!(WitnessPos::liquid(NonZeroU32::MIN, LIQUID_GENESIS_TIMESTAMP - 1), None);
-        assert_eq!(WitnessPos::liquid(NonZeroU32::MIN, BITCOIN_GENESIS_TIMESTAMP), None);
-        assert!(WitnessPos::bitcoin(NonZeroU32::MIN, BITCOIN_GENESIS_TIMESTAMP).is_some());
-        assert!(WitnessPos::liquid(NonZeroU32::MIN, LIQUID_GENESIS_TIMESTAMP).is_some());
-        assert!(WitnessPos::bitcoin(NonZeroU32::MIN, LIQUID_GENESIS_TIMESTAMP).is_some());
+        assert_eq!(
+            WitnessPos::bitcoin(NonZeroU32::MIN, Layer1::Bitcoin.genesis_timestamp() - 1),
+            None
+        );
+        assert_eq!(
+            WitnessPos::liquid(NonZeroU32::MIN, Layer1::Liquid.genesis_timestamp() - 1),
+            None
+        );
+        assert_eq!(WitnessPos::liquid(NonZeroU32::MIN, Layer1::Bitcoin.genesis_timestamp()), None);
+        assert!(WitnessPos::bitcoin(NonZeroU32::MIN, Layer1::Bitcoin.genesis_timestamp()).is_some());
+        assert!(WitnessPos::liquid(NonZeroU32::MIN, Layer1::Liquid.genesis_timestamp()).is_some());
+        assert!(WitnessPos::bitcoin(NonZeroU32::MIN, Layer1::Liquid.genesis_timestamp()).is_some());
     }
 
     #[test]
     fn witness_pos_getters() {
-        let pos = WitnessPos::bitcoin(NonZeroU32::MIN, BITCOIN_GENESIS_TIMESTAMP).unwrap();
+        let pos =
+            WitnessPos::bitcoin(NonZeroU32::MIN, Layer1::Bitcoin.genesis_timestamp()).unwrap();
         assert_eq!(pos.height(), NonZeroU32::MIN);
-        assert_eq!(pos.timestamp(), BITCOIN_GENESIS_TIMESTAMP);
+        assert_eq!(pos.timestamp(), Layer1::Bitcoin.genesis_timestamp());
         assert_eq!(pos.layer1(), Layer1::Bitcoin);
 
-        let pos = WitnessPos::liquid(NonZeroU32::MIN, LIQUID_GENESIS_TIMESTAMP).unwrap();
+        let pos = WitnessPos::liquid(NonZeroU32::MIN, Layer1::Liquid.genesis_timestamp()).unwrap();
         assert_eq!(pos.height(), NonZeroU32::MIN);
-        assert_eq!(pos.timestamp(), LIQUID_GENESIS_TIMESTAMP);
+        assert_eq!(pos.timestamp(), Layer1::Liquid.genesis_timestamp());
         assert_eq!(pos.layer1(), Layer1::Liquid);
     }
 }

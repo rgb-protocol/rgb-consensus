@@ -44,6 +44,22 @@ pub enum Layer1 {
     Liquid = 1,
 }
 
+// Sat Jan 03 18:15:05 2009 UTC
+const BITCOIN_GENESIS_TIMESTAMP: i64 = 1231006505;
+
+// Sat Jan 03 18:15:05 2009 UTC
+const LIQUID_GENESIS_TIMESTAMP: i64 = 1296692202;
+
+impl Layer1 {
+    #[inline]
+    pub fn genesis_timestamp(&self) -> i64 {
+        match self {
+            Layer1::Bitcoin => BITCOIN_GENESIS_TIMESTAMP,
+            Layer1::Liquid => LIQUID_GENESIS_TIMESTAMP,
+        }
+    }
+}
+
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Display)]
 #[display(inner)]
 #[derive(StrictType, StrictEncode, StrictDecode)]
