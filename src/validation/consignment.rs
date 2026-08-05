@@ -23,7 +23,7 @@
 //! Common API for accessing RGB contract operation graph, including individual
 //! state transitions, genesis, outputs, assignments & single-use-seal data.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use aluvm::library::{Lib, LibId};
 use amplify::confinement::ConfinedOrdMap;
@@ -33,8 +33,9 @@ use strict_types::TypeSystem;
 use super::spv::SpvProof;
 use super::EAnchor;
 use crate::{
-    AssignmentType, AssignmentsRef, BundleId, ContractId, Genesis, GlobalState, GraphSeal,
-    Metadata, OpFullType, OpId, Operation, Schema, Transition, TransitionBundle, TypedAssigns,
+    AssignmentType, AssignmentsRef, BuilderSeal, BundleId, ContractId, Genesis, GlobalState,
+    GraphSeal, Metadata, OpFullType, OpId, Operation, Schema, Transition, TransitionBundle,
+    TypedAssigns,
 };
 
 pub const CONSIGNMENT_MAX_LIBS: usize = 1024;
@@ -127,6 +128,10 @@ impl<C: ConsignmentApi> ConsignmentApi for CheckedConsignment<'_, C> {
     ) -> impl Iterator<Item = (&TransitionBundle, &EAnchor, &Tx, Option<&SpvProof>)> {
         self.0.bundles_info()
     }
+
+    fn terminals(&self) -> BTreeMap<BundleId, BTreeSet<BuilderSeal<GraphSeal>>> {
+        self.0.terminals()
+    }
 }
 
 /// Trait defining common data access API for all storage-related RGB structures
@@ -154,6 +159,13 @@ pub trait ConsignmentApi {
     fn bundles_info(
         &self,
     ) -> impl Iterator<Item = (&TransitionBundle, &EAnchor, &Tx, Option<&SpvProof>)>;
+
+    /// Returns the history terminals of the consignment.
+    ///
+    /// For each terminal bundle, returns the set of beneficiary seals as
+    /// [`BuilderSeal`]s: revealed for witness-vout transfers, concealed for
+    /// blinded ones.
+    fn terminals(&self) -> BTreeMap<BundleId, BTreeSet<BuilderSeal<GraphSeal>>>;
 
     /// Returns iterator over all bundle ids present in the consignment.
     fn bundle_ids<'iter>(&self) -> impl Iterator<Item = BundleId> + 'iter {

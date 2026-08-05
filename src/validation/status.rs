@@ -210,6 +210,12 @@ pub enum Failure {
     ContractMismatch(OpId, ContractId),
     /// transition claims ID {0} which differs from the actual one {1}
     TransitionIdMismatch(OpId, OpId),
+    /// terminal references bundle {0} which is not present in the consignment.
+    TerminalBundleAbsent(BundleId),
+    /// terminal seal for bundle {0} does not match any assignment in the bundle.
+    TerminalSealMismatch(BundleId),
+    /// terminal seal for bundle {0} matches assignment {1} which is spent within the consignment.
+    TerminalSealSpent(BundleId, Opout),
 
     // Errors checking bundle commitments
     /// transition bundle {0} references non-existing input {1} in witness {2}.

@@ -34,8 +34,8 @@ use strict_encoding::StrictDumb;
 use strict_types::{StrictDeserialize, StrictSerialize, StrictVal};
 
 use crate::commit_verify::{
-    mpc, CommitEncode, CommitEngine, CommitId, CommitmentId, Conceal, DigestExt, MerkleHash,
-    MerkleLeaves, Sha256, StrictHash,
+    mpc, CommitEncode, CommitEngine, CommitId, CommitmentId, DigestExt, MerkleHash, MerkleLeaves,
+    Sha256, StrictHash,
 };
 use crate::{
     impl_serde_baid64, Assign, AssignmentType, Assignments, BundleId, ChainNet, ExposedSeal,
@@ -354,13 +354,10 @@ impl CommitEncode for AssignmentCommitment {
 
 impl<State: ExposedState, Seal: ExposedSeal> Assign<State, Seal> {
     pub fn commitment(&self, ty: AssignmentType) -> AssignmentCommitment {
-        let Self::ConfidentialSeal { seal, state } = self.conceal() else {
-            unreachable!();
-        };
         AssignmentCommitment {
             ty,
-            state: state.state_data(),
-            seal,
+            state: self.state.state_data(),
+            seal: self.to_confidential_seal(),
         }
     }
 }

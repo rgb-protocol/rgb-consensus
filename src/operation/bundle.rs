@@ -33,7 +33,7 @@ use crate::commit_verify::{
     mpc, CommitEncode, CommitEngine, CommitId, CommitmentId, DigestExt, Sha256,
 };
 use crate::operation::operations::Operation;
-use crate::{OpId, Transition, LIB_NAME_RGB_COMMIT};
+use crate::{BuilderSeal, OpId, Transition, LIB_NAME_RGB_COMMIT};
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Display, From)]
 #[derive(StrictType, StrictDumb, StrictEncode, StrictDecode)]
@@ -192,16 +192,31 @@ impl TransitionBundle {
         })
     }
 
-    pub fn reveal_seal(&mut self, bundle_id: BundleId, seal: GraphSeal) -> bool {
-        if self.bundle_id() != bundle_id {
-            return false;
+    /// Returns the opouts of the assignments of this bundle assigning some
+    /// state to `seal`.
+    ///
+    /// Comparison is direct [`BuilderSeal`] equality: a revealed seal only
+    /// matches an assignment with the same revealed seal, a concealed
+    /// seal only matches an assignment with the same concealed seal.
+    pub fn opouts_assigned_to(&self, seal: &BuilderSeal<GraphSeal>) -> BTreeSet<Opout> {
+        let mut opouts = BTreeSet::new();
+        for kt in &self.known_transitions {
+            for (ty, ta) in kt.transition.assignments.iter() {
+                for (no, s) in ta.seals().enumerate() {
+                    if s == seal {
+                        opouts.insert(Opout::new(kt.opid, *ty, no as u16));
+                    }
+                }
+            }
         }
+        opouts
+    }
+
+    pub fn reveal_seal(&mut self, seal: GraphSeal) {
         self.known_transitions
             .iter_mut()
             .flat_map(|kt| kt.transition.assignments.values_mut())
             .for_each(|a| a.reveal_seal(seal));
-
-        true
     }
 
     pub fn reveal_transition(

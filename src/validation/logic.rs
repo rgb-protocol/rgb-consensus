@@ -353,45 +353,37 @@ impl OwnedStateSchema {
         data: &Assign<State, Seal>,
         type_system: &TypeSystem,
     ) -> Result<(), ValidationError> {
-        match data {
-            Assign::Revealed { state, .. } | Assign::ConfidentialSeal { state, .. } => {
-                match (self, state.state_data()) {
-                    (OwnedStateSchema::Declarative, RevealedState::Void) => {}
-                    (OwnedStateSchema::Fungible(schema), RevealedState::Fungible(v))
-                        if v.as_inner().fungible_type() != *schema =>
-                    {
-                        return Err(ValidationError::InvalidConsignment(
-                            Failure::FungibleTypeMismatch {
-                                opid,
-                                state_type,
-                                expected: *schema,
-                                found: v.as_inner().fungible_type(),
-                            },
-                        ));
-                    }
-                    (OwnedStateSchema::Fungible(_), RevealedState::Fungible(_)) => {}
-                    (OwnedStateSchema::Structured(sem_id), RevealedState::Structured(data)) => {
-                        if type_system
-                            .strict_deserialize_type(*sem_id, data.as_ref())
-                            .is_err()
-                        {
-                            return Err(ValidationError::InvalidConsignment(
-                                Failure::SchemaInvalidOwnedValue(opid, state_type, *sem_id),
-                            ));
-                        };
-                    }
-                    // all other options are mismatches
-                    (state_schema, found) => {
-                        return Err(ValidationError::InvalidConsignment(
-                            Failure::StateTypeMismatch {
-                                opid,
-                                state_type,
-                                expected: state_schema.state_type(),
-                                found: found.state_type(),
-                            },
-                        ));
-                    }
-                }
+        match (self, data.state.state_data()) {
+            (OwnedStateSchema::Declarative, RevealedState::Void) => {}
+            (OwnedStateSchema::Fungible(schema), RevealedState::Fungible(v))
+                if v.as_inner().fungible_type() != *schema =>
+            {
+                return Err(ValidationError::InvalidConsignment(Failure::FungibleTypeMismatch {
+                    opid,
+                    state_type,
+                    expected: *schema,
+                    found: v.as_inner().fungible_type(),
+                }));
+            }
+            (OwnedStateSchema::Fungible(_), RevealedState::Fungible(_)) => {}
+            (OwnedStateSchema::Structured(sem_id), RevealedState::Structured(data)) => {
+                if type_system
+                    .strict_deserialize_type(*sem_id, data.as_ref())
+                    .is_err()
+                {
+                    return Err(ValidationError::InvalidConsignment(
+                        Failure::SchemaInvalidOwnedValue(opid, state_type, *sem_id),
+                    ));
+                };
+            }
+            // all other options are mismatches
+            (state_schema, found) => {
+                return Err(ValidationError::InvalidConsignment(Failure::StateTypeMismatch {
+                    opid,
+                    state_type,
+                    expected: state_schema.state_type(),
+                    found: found.state_type(),
+                }));
             }
         }
         Ok(())

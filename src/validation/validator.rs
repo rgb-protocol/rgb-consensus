@@ -387,9 +387,27 @@ impl<
     // *** PART III: Validating single-use-seals
     fn validate_bundles(&mut self) -> Result<(), ValidationError> {
         let mut unsafe_history_map: HashMap<u32, HashSet<Txid>> = HashMap::new();
+        // Owned copy of the history terminals, drained as we visit the bundles they
+        // reference. Each terminal seal is checked against its bundle's assignments;
+        // any entry left over at the end references an absent bundle.
+        let mut terminals = self.consignment.terminals();
+        // Opouts the terminal seals resolve to, checked to be unspent once all the bundles
+        // have been processed.
+        let mut terminal_opouts = BTreeMap::<Opout, BundleId>::new();
         for (bundle, anchor, tx, spv_proof) in self.consignment.bundles_info() {
             let bundle_id = bundle.bundle_id();
             let witness_id = tx.compute_txid();
+            if let Some(seals) = terminals.remove(&bundle_id) {
+                for seal in &seals {
+                    let opouts = bundle.opouts_assigned_to(seal);
+                    if opouts.is_empty() {
+                        return Err(ValidationError::InvalidConsignment(
+                            Failure::TerminalSealMismatch(bundle_id),
+                        ));
+                    }
+                    terminal_opouts.extend(opouts.into_iter().map(|opout| (opout, bundle_id)));
+                }
+            }
             let (witness_tx, witness_ord) = self.resolve_witness(bundle_id, tx, spv_proof)?;
             if let Some(safe_height) = self.safe_height {
                 match witness_ord {
@@ -421,6 +439,22 @@ impl<
                     dag_info.borrow_mut().connect_transition(transition, opid);
                 }
             }
+        }
+        // Any remaining terminal must reference a bundle that is not present in the consignment.
+        if let Some((bundle_id, _)) = terminals.into_iter().next() {
+            return Err(ValidationError::InvalidConsignment(Failure::TerminalBundleAbsent(
+                bundle_id,
+            )));
+        }
+        // Terminals must be unspent.
+        let input_opouts = self.input_opouts.borrow();
+        if let Some((opout, bundle_id)) = terminal_opouts
+            .into_iter()
+            .find(|(opout, _)| input_opouts.contains(opout))
+        {
+            return Err(ValidationError::InvalidConsignment(Failure::TerminalSealSpent(
+                bundle_id, opout,
+            )));
         }
         if self.safe_height.is_some() && !unsafe_history_map.is_empty() {
             self.status
@@ -477,7 +511,10 @@ impl<
 
         // Regular path: ask the resolver to fetch the tx and determine its ordering.
         match self.resolver.resolve_witness(witness_id) {
-            Err(err) => Err(ValidationError::ResolverError(err)),
+            Err(err) => {
+                // Unable to retrieve the corresponding transaction from the resolver.
+                Err(ValidationError::ResolverError(err))
+            }
             Ok(WitnessStatus::Resolved(tx, ord)) if ord != WitnessOrd::Archived => {
                 self.status.borrow_mut().tx_ord_map.insert(witness_id, ord);
                 Ok((tx, ord))

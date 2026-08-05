@@ -49,5 +49,5 @@ pub use operations::{
     Genesis, Identity, Inputs, Operation, Opout, OpoutParseError, SealClosingStrategy, Signature,
     Transition,
 };
-pub use seal::{ExposedSeal, GenesisSeal, GraphSeal, OutputSeal, TxoSeal};
+pub use seal::{BuilderSeal, ExposedSeal, GenesisSeal, GraphSeal, OutputSeal, TxoSeal};
 pub use state::{ExposedState, RevealedState, StateType};

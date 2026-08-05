@@ -44,10 +44,10 @@ pub const LIB_ID_BPCORE: &str =
     "stl:FZVwlcEJ-p0LhCJg-CU6awvX-9RTo2ST-3G5hYEa-gEJCjUA#cigar-master-style";
 /// Strict types id for the library providing data types for RGB consensus.
 pub const LIB_ID_RGB_COMMIT: &str =
-    "stl:fHPvkmm2-jnlIdf8-44fradm-~EbYYk2-OqkiKYl-Rohkac4#domain-numeric-actor";
+    "stl:x~h_pKIn-3nn99ge-4Y04E4S-3jA5_Mt-dSWrmu9-m1Uuwyo#connect-wonder-charter";
 /// Strict types id for the library providing data types for RGB consensus.
 pub const LIB_ID_RGB_LOGIC: &str =
-    "stl:dC6XWoqx-WCGR78B-~OSC3eP-Ux7Z4cZ-Xe4Re56-zJrwaDs#loyal-respect-tourist";
+    "stl:Blb1UdVP-c3HrwQr-hDNjUNp-V_i8Emc-aDL2Hu1-mtRJAB8#travel-culture-insect";
 
 pub fn commit_verify_stl() -> TypeLib {
     LibBuilder::with(libname!(LIB_NAME_COMMIT_VERIFY), [
