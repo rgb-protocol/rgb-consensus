@@ -256,24 +256,19 @@ impl TapretNodePartner {
 
 #[cfg(feature = "serde")]
 mod leaf_script_serde {
-    use bitcoin::taproot::TAPROOT_LEAF_TAPSCRIPT;
-    use hex_conservative::DisplayHex;
+    use bitcoin::taproot::LeafVersion;
     use serde_crate::{Deserialize, Deserializer, Serialize, Serializer};
 
     use super::*;
 
-    #[derive(Serialize, Deserialize)]
-    #[serde(crate = "serde_crate", rename_all = "camelCase")]
-    enum LeafVersionSerde {
-        TapScript,
-        Future(u8),
-    }
-
+    /// Shadow of [`LeafScript`], which has no serde impls of its own; both
+    /// fields delegate to the rust-bitcoin ones (leaf version as a consensus
+    /// byte, script as hex).
     #[derive(Serialize, Deserialize)]
     #[serde(crate = "serde_crate")]
     struct LeafScriptData {
-        version: LeafVersionSerde,
-        script: String,
+        version: LeafVersion,
+        script: ScriptBuf,
     }
 
     pub fn serialize<S>(
@@ -283,32 +278,20 @@ mod leaf_script_serde {
     where
         S: Serializer,
     {
-        let byte = leaf_script.version.to_consensus();
-        let version =
-            if byte == 0xc0 { LeafVersionSerde::TapScript } else { LeafVersionSerde::Future(byte) };
-
-        let data = LeafScriptData {
-            version,
-            script: leaf_script.script.to_bytes().to_lower_hex_string(),
-        };
-        data.serialize(serializer)
+        LeafScriptData {
+            version: leaf_script.version,
+            script: leaf_script.script.clone(),
+        }
+        .serialize(serializer)
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<LeafScript<ScriptBuf>, D::Error>
     where D: Deserializer<'de> {
         let data = LeafScriptData::deserialize(deserializer)?;
-
-        let byte = match data.version {
-            LeafVersionSerde::TapScript => TAPROOT_LEAF_TAPSCRIPT,
-            LeafVersionSerde::Future(b) => b,
-        };
-        let version = bitcoin::taproot::LeafVersion::from_consensus(byte)
-            .map_err(serde_crate::de::Error::custom)?;
-        let script_bytes = hex_conservative::decode_to_vec(&data.script)
-            .map_err(|e| serde_crate::de::Error::custom(format!("invalid hex in script: {}", e)))?;
-        let script = ScriptBuf::from_bytes(script_bytes);
-
-        Ok(LeafScript { version, script })
+        Ok(LeafScript {
+            version: data.version,
+            script: data.script,
+        })
     }
 }
 
