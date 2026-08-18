@@ -171,6 +171,20 @@ pub trait ExposedSeal:
             .unwrap_or(ExplicitSeal::new(self.outpoint_or(witness_id)))
     }
 
+    /// Resolves the seal to the outpoint it closes, falling back to
+    /// `witness_id` when given one.
+    ///
+    /// `witness_id` is `None` for genesis seals, which always carry their own
+    /// txid; passing `None` for a seal without one panics.
+    fn to_output_seal_or(self, witness_id: Option<Txid>) -> OutputSeal {
+        match witness_id {
+            Some(witness_id) => self.to_output_seal_or_default(witness_id),
+            None => self
+                .to_output_seal()
+                .expect("seal without a witness must have an outpoint"),
+        }
+    }
+
     /// Attempts to convert to a `BlindSeal<Txid>`,
     /// returning None if both self.txid() and witness_id are None
     fn with_witness_id(self, witness_id: Option<Txid>) -> Option<BlindSeal<Txid>>;
