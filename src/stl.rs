@@ -47,7 +47,7 @@ pub const LIB_ID_RGB_COMMIT: &str =
     "stl:x~h_pKIn-3nn99ge-4Y04E4S-3jA5_Mt-dSWrmu9-m1Uuwyo#connect-wonder-charter";
 /// Strict types id for the library providing data types for RGB consensus.
 pub const LIB_ID_RGB_LOGIC: &str =
-    "stl:Blb1UdVP-c3HrwQr-hDNjUNp-V_i8Emc-aDL2Hu1-mtRJAB8#travel-culture-insect";
+    "stl:mtOiAh83-YybCbMh-8T3x41Z-WGony6S-h9PSxdJ-ie0efM8#alamo-dynasty-oliver";
 
 pub fn commit_verify_stl() -> TypeLib {
     LibBuilder::with(libname!(LIB_NAME_COMMIT_VERIFY), [

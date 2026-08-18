@@ -37,7 +37,7 @@ use crate::operation::seal::ExposedSeal;
 use crate::seals::txout::{CloseMethod, Witness};
 use crate::single_use_seals::SealWitness;
 use crate::txout::BlindSeal;
-use crate::validation::{OpoutsDagInfo, SchemaRules};
+use crate::validation::{OpoutsDagInfo, SchemaRules, SpvProof};
 use crate::vm::{ContractStateAccess, ContractStateEvolve, OrdOpRef, WitnessOrd};
 use crate::{
     AssignmentType, Assignments, BundleId, ChainNet, ContractId, KnownTransition, OpId, Operation,
@@ -197,13 +197,11 @@ pub struct ValidationConfig {
     pub build_opouts_dag: bool,
 }
 
-pub struct Validator<
-    'consignment,
-    'resolver,
-    S: ContractStateAccess + ContractStateEvolve,
-    C: ConsignmentApi,
-    R: ResolveWitness,
-> {
+/// The witnesses phase 2 has to resolve, collected while walking the bundles.
+type ToResolve = Vec<(BundleId, Txid, Option<SpvProof>)>;
+
+pub struct Validator<'consignment, S: ContractStateAccess + ContractStateEvolve, C: ConsignmentApi>
+{
     consignment: CheckedConsignment<'consignment, C>,
 
     status: RefCell<Status>,
@@ -219,24 +217,18 @@ pub struct Validator<
 
     opout_assigns: RefCell<BTreeMap<Opout, RevealedAssign>>,
 
-    // Operations in this set will not be validated
-    resolver: CheckedWitnessResolver<&'resolver R>,
     safe_height: Option<NonZeroU32>,
     opouts_dag_info: Option<RefCell<OpoutsDagInfo>>,
+
+    to_resolve: Option<ToResolve>,
 }
 
-impl<
-        'consignment,
-        'resolver,
-        S: ContractStateAccess + ContractStateEvolve,
-        C: ConsignmentApi,
-        R: ResolveWitness,
-    > Validator<'consignment, 'resolver, S, C, R>
+impl<'consignment, S: ContractStateAccess + ContractStateEvolve, C: ConsignmentApi>
+    Validator<'consignment, S, C>
 {
     fn init(
         consignment: &'consignment C,
         schema_rules: &'consignment SchemaRules,
-        resolver: &'resolver R,
         context: S::Context<'_>,
         validation_config: &ValidationConfig,
     ) -> Self {
@@ -269,10 +261,10 @@ impl<
             chain_net,
             input_opouts,
             opout_assigns,
-            resolver: CheckedWitnessResolver::from(resolver),
             contract_state: Rc::new(RefCell::new(S::init(context))),
             safe_height: validation_config.safe_height,
             opouts_dag_info,
+            to_resolve: None,
         }
     }
 
@@ -280,15 +272,29 @@ impl<
     /// resolver function returning transaction and its fee for a given
     /// transaction id, and returns a validation object listing all detected
     /// failures, warnings and additional information.
-    pub fn validate(
+    pub fn validate<'resolver, R: ResolveWitness>(
         consignment: &'consignment C,
         schema_rules: &'consignment SchemaRules,
         resolver: &'resolver R,
         context: S::Context<'_>,
         validation_config: &ValidationConfig,
     ) -> Result<Status, ValidationError> {
-        let mut validator =
-            Self::init(consignment, schema_rules, resolver, context, validation_config);
+        let validator =
+            Self::validate_deterministic(consignment, schema_rules, context, validation_config)?;
+        validator.finalize_with_resolver(resolver)
+    }
+
+    /// Phase 1: validate everything that only depends on the consignment file.
+    ///
+    /// Returns `Self` so the caller can proceed to phase 2, which resolves the
+    /// witness transactions.
+    pub fn validate_deterministic(
+        consignment: &'consignment C,
+        schema_rules: &'consignment SchemaRules,
+        context: S::Context<'_>,
+        validation_config: &ValidationConfig,
+    ) -> Result<Self, ValidationError> {
+        let mut validator = Self::init(consignment, schema_rules, context, validation_config);
         // If the chain-network pair doesn't match there is no point in validating the contract
         // since all witness transactions will be missed.
         if validator.chain_net != validation_config.chain_net {
@@ -296,16 +302,59 @@ impl<
                 validation_config.chain_net,
             )));
         }
-        if let Err(e) = resolver.check_chain_net(validation_config.chain_net) {
-            return Err(ValidationError::ResolverError(e));
-        }
 
         validator.validate_genesis()?;
 
-        validator.validate_bundles()?;
+        validator.to_resolve = Some(validator.validate_bundles()?);
+
+        Ok(validator)
+    }
+
+    /// Phase 2: resolve the witnesses.
+    ///
+    /// Must be called after [`Self::validate_deterministic`] succeeds. The resolver is
+    /// used only to determine the [`WitnessOrd`] of each bundle's witness transaction.
+    pub fn finalize_with_resolver<R: ResolveWitness>(
+        mut self,
+        resolver: &R,
+    ) -> Result<Status, ValidationError> {
+        if let Err(e) = resolver.check_chain_net(self.chain_net) {
+            return Err(ValidationError::ResolverError(e));
+        }
+        let resolver = CheckedWitnessResolver::from(resolver);
+
+        let to_resolve = self
+            .to_resolve
+            .take()
+            .expect("the deterministic part of the validation must be executed first");
+        let mut unsafe_history_map: HashMap<u32, HashSet<Txid>> = HashMap::new();
+        for (bundle_id, witness_id, spv_proof) in to_resolve {
+            let witness_ord = self.resolve_witness(&resolver, bundle_id, witness_id, spv_proof)?;
+            if let Some(safe_height) = self.safe_height {
+                match witness_ord {
+                    WitnessOrd::Mined(witness_pos) => {
+                        let witness_height = witness_pos.height();
+                        if witness_height > safe_height {
+                            unsafe_history_map
+                                .entry(witness_height.into())
+                                .or_default()
+                                .insert(witness_id);
+                        }
+                    }
+                    WitnessOrd::Tentative | WitnessOrd::Ignored | WitnessOrd::Archived => {
+                        unsafe_history_map.entry(0).or_default().insert(witness_id);
+                    }
+                }
+            }
+        }
+        if self.safe_height.is_some() && !unsafe_history_map.is_empty() {
+            self.status
+                .borrow_mut()
+                .add_warning(Warning::UnsafeHistory(unsafe_history_map));
+        }
 
         // Done. Returning status report with all possible warnings and notifications.
-        Ok(validator.status.into_inner())
+        Ok(self.status.take())
     }
 
     // *** PART I: Validating business logic
@@ -362,8 +411,7 @@ impl<
     }
 
     // *** PART II: Validating single-use-seals
-    fn validate_bundles(&mut self) -> Result<(), ValidationError> {
-        let mut unsafe_history_map: HashMap<u32, HashSet<Txid>> = HashMap::new();
+    fn validate_bundles(&mut self) -> Result<ToResolve, ValidationError> {
         // Owned copy of the history terminals, drained as we visit the bundles they
         // reference. Each terminal seal is checked against its bundle's assignments;
         // any entry left over at the end references an absent bundle.
@@ -371,9 +419,10 @@ impl<
         // Opouts the terminal seals resolve to, checked to be unspent once all the bundles
         // have been processed.
         let mut terminal_opouts = BTreeMap::<Opout, BundleId>::new();
-        for (bundle, anchor, tx, spv_proof) in self.consignment.bundles_info() {
+        let mut to_resolve = ToResolve::new();
+        for (bundle, anchor, witness_tx, spv_proof) in self.consignment.bundles_info() {
             let bundle_id = bundle.bundle_id();
-            let witness_id = tx.compute_txid();
+            let witness_id = witness_tx.compute_txid();
             if let Some(seals) = terminals.remove(&bundle_id) {
                 for seal in &seals {
                     let opouts = bundle.opouts_assigned_to(seal);
@@ -385,31 +434,9 @@ impl<
                     terminal_opouts.extend(opouts.into_iter().map(|opout| (opout, bundle_id)));
                 }
             }
-            let (witness_tx, witness_ord) = self.resolve_witness(bundle_id, tx, spv_proof)?;
-            if let Some(safe_height) = self.safe_height {
-                match witness_ord {
-                    WitnessOrd::Mined(witness_pos) => {
-                        let witness_height = witness_pos.height();
-                        if witness_height > safe_height {
-                            unsafe_history_map
-                                .entry(witness_height.into())
-                                .or_default()
-                                .insert(witness_id);
-                        }
-                    }
-                    WitnessOrd::Tentative | WitnessOrd::Ignored | WitnessOrd::Archived => {
-                        unsafe_history_map.entry(0).or_default().insert(witness_id);
-                    }
-                }
-            }
+            to_resolve.push((bundle_id, witness_id, spv_proof.cloned()));
             for known_transition in &bundle.known_transitions {
-                self.validate_transition(
-                    known_transition,
-                    bundle,
-                    &witness_tx,
-                    &witness_ord,
-                    anchor,
-                )?;
+                self.validate_transition(known_transition, bundle, witness_tx, anchor)?;
                 let KnownTransition { opid, transition } = known_transition;
                 self.process_assignments(*opid, Some(witness_id), &transition.assignments)?;
                 if let Some(ref mut dag_info) = self.opouts_dag_info {
@@ -433,26 +460,22 @@ impl<
                 bundle_id, opout,
             )));
         }
-        if self.safe_height.is_some() && !unsafe_history_map.is_empty() {
-            self.status
-                .borrow_mut()
-                .add_warning(Warning::UnsafeHistory(unsafe_history_map));
-        }
         if let Some(dag_info) = &self.opouts_dag_info {
             self.status.borrow_mut().dag_data_opt = Some(dag_info.borrow().to_opouts_dag_data());
         }
-        Ok(())
+        Ok(to_resolve)
     }
 
-    fn resolve_witness(
+    fn resolve_witness<R: ResolveWitness>(
         &self,
+        resolver: &CheckedWitnessResolver<&R>,
         bundle_id: BundleId,
-        tx: &Tx,
-        spv_proof_opt: Option<&super::spv::SpvProof>,
-    ) -> Result<(Tx, WitnessOrd), ValidationError> {
-        let witness_id = tx.compute_txid();
+        witness_id: Txid,
+        spv_proof_opt: Option<SpvProof>,
+    ) -> Result<WitnessOrd, ValidationError> {
+        // SPV
         if let Some(spv_proof) = spv_proof_opt {
-            match self.resolver.get_block_header(spv_proof.block_height) {
+            match resolver.get_block_header(spv_proof.block_height) {
                 Ok(header) => {
                     // a proof which does not verify and a header which makes no
                     // position are the same thing here: neither yields an ord,
@@ -465,7 +488,7 @@ impl<
                         Some(witness_pos) => {
                             let ord = WitnessOrd::Mined(witness_pos);
                             self.status.borrow_mut().tx_ord_map.insert(witness_id, ord);
-                            return Ok((tx.clone(), ord));
+                            return Ok(ord);
                         }
                         // A proof which does not verify is not a reason to reject the
                         // consignment: the header is the one at the proof's height in the
@@ -486,15 +509,15 @@ impl<
             }
         }
 
-        // Regular path: ask the resolver to fetch the tx and determine its ordering.
-        match self.resolver.resolve_witness(witness_id) {
+        // TX
+        match resolver.resolve_witness(witness_id) {
             Err(err) => {
                 // Unable to retrieve the corresponding transaction from the resolver.
                 Err(ValidationError::ResolverError(err))
             }
-            Ok(WitnessStatus::Resolved(tx, ord)) if ord != WitnessOrd::Archived => {
+            Ok(WitnessStatus::Resolved(_, ord)) if ord != WitnessOrd::Archived => {
                 self.status.borrow_mut().tx_ord_map.insert(witness_id, ord);
-                Ok((tx, ord))
+                Ok(ord)
             }
             _ => Err(ValidationError::InvalidConsignment(Failure::SealNoPubWitness(
                 bundle_id, witness_id,
@@ -578,7 +601,6 @@ impl<
         known_transition: &KnownTransition,
         bundle: &TransitionBundle,
         witness_tx: &Tx,
-        witness_ord: &WitnessOrd,
         anchor: &Anchor<DbcProof>,
     ) -> Result<(), ValidationError> {
         let KnownTransition { opid, transition } = known_transition;
@@ -621,7 +643,7 @@ impl<
         self.validate_seal_closing(seals, bundle_id, &witness, anchor.mpc_proof.clone())?;
         self.schema_rules.validate_state(
             self.consignment.genesis(),
-            OrdOpRef::Transition(transition, witness.txid, *witness_ord, bundle_id),
+            OrdOpRef::Transition(transition, witness.txid, bundle_id),
             self.contract_state.clone(),
             &state_by_type,
         )?;

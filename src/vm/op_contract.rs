@@ -489,7 +489,7 @@ impl<S: ContractStateAccess> InstructionSet for ContractOp<S> {
             }
             ContractOp::Vts(reg_s) => match context.op_info.op {
                 OrdOpRef::Genesis(_) => fail!(),
-                OrdOpRef::Transition(transition, _, _, _) => {
+                OrdOpRef::Transition(transition, _, _) => {
                     let Some(pubkey) = regs.s16(*reg_s) else {
                         fail!()
                     };

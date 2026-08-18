@@ -48,7 +48,7 @@ pub type BlockHeight = NonZeroU32;
 pub enum OrdOpRef<'op> {
     #[from]
     Genesis(&'op Genesis),
-    Transition(&'op Transition, Txid, WitnessOrd, BundleId),
+    Transition(&'op Transition, Txid, BundleId),
 }
 
 impl PartialOrd for OrdOpRef<'_> {
@@ -70,15 +70,14 @@ impl OrdOpRef<'_> {
     pub fn bundle_id(&self) -> Option<BundleId> {
         match self {
             OrdOpRef::Genesis(_) => None,
-            OrdOpRef::Transition(_, _, _, bundle_id) => Some(*bundle_id),
+            OrdOpRef::Transition(_, _, bundle_id) => Some(*bundle_id),
         }
     }
 
     pub fn op_ord(&self) -> OpOrd {
         match self {
             OrdOpRef::Genesis(_) => OpOrd::Genesis,
-            OrdOpRef::Transition(op, _, witness_ord, _) => OpOrd::Transition {
-                witness: *witness_ord,
+            OrdOpRef::Transition(op, _, _) => OpOrd::Transition {
                 ty: op.transition_type,
                 nonce: op.nonce,
                 opid: op.id(),
@@ -256,20 +255,13 @@ impl Display for WitnessPos {
     serde(crate = "serde_crate", rename_all = "camelCase")
 )]
 pub enum WitnessOrd {
-    /// Transaction is included into layer 1 blockchain at a specific height and
-    /// timestamp.
-    ///
-    /// NB: only timestamp is used in consensus ordering though, see
-    /// [`WitnessPos::cmp`] for the details.
+    /// Transaction is included into layer 1 blockchain at a specific height and timestamp.
     #[from]
     #[display(inner)]
     Mined(WitnessPos),
 
     /// Valid witness transaction which commits the most recent RGB state, but
-    /// is not (yet) included into a layer 1 blockchain. Such transactions have
-    /// a higher priority over onchain transactions (i.e. they are processed by
-    /// the VM at the very end, and their global state becomes at the top of the
-    /// contract state).
+    /// is not (yet) included into a layer 1 blockchain.
     ///
     /// NB: not each and every signed offchain transaction should have this
     /// status; all offchain cases which fall under [`Self::Archived`] must be
@@ -303,17 +295,12 @@ impl WitnessOrd {
     pub fn is_valid(self) -> bool { self != Self::Archived }
 }
 
-/// Operation ordering priority for contract state computation according to
-/// [RCP-240731A].
-///
+/// Operation ordering priority for contract state computation
+//
 /// The ordering is the following:
 /// - Genesis is processed first.
-/// - Other operations are ordered according to their witness transactions (see [`WitnessOrd`] for
-///   the details).
-/// - If two or more operations share the same witness transaction ordering, they are first ordered
-///   basing on their `nonce` value, and if it is also the same, basing on their operation id value.
-///
-/// [RCP-240731A]: https://github.com/RGB-WG/RFC/issues/10
+/// - Other operations are first ordered based on their transition type, then on their `nonce`
+///   value, and ultimately on their operation id.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 #[derive(StrictType, StrictDumb, StrictEncode, StrictDecode)]
 #[strict_type(lib = LIB_NAME_RGB_LOGIC, tags = custom)]
@@ -327,21 +314,10 @@ pub enum OpOrd {
     Genesis,
     #[strict_type(tag = 0xFF)]
     Transition {
-        witness: WitnessOrd,
         ty: TransitionType,
         nonce: u64,
         opid: OpId,
     },
-}
-
-impl OpOrd {
-    #[inline]
-    pub fn is_archived(&self) -> bool {
-        matches!(self, Self::Transition {
-            witness: WitnessOrd::Archived,
-            ..
-        })
-    }
 }
 
 /// Consensus ordering of global state
@@ -365,20 +341,9 @@ impl GlobalOrd {
             idx,
         }
     }
-    pub fn transition(
-        opid: OpId,
-        idx: u16,
-        ty: TransitionType,
-        nonce: u64,
-        witness: WitnessOrd,
-    ) -> Self {
+    pub fn transition(opid: OpId, idx: u16, ty: TransitionType, nonce: u64) -> Self {
         Self {
-            op_ord: OpOrd::Transition {
-                witness,
-                ty,
-                nonce,
-                opid,
-            },
+            op_ord: OpOrd::Transition { ty, nonce, opid },
             idx,
         }
     }
@@ -489,5 +454,23 @@ mod test {
         assert_eq!(pos.height(), NonZeroU32::MIN);
         assert_eq!(pos.timestamp(), Layer1::Liquid.genesis_timestamp());
         assert_eq!(pos.layer1(), Layer1::Liquid);
+    }
+
+    #[test]
+    fn ord_op_ref_contract_id() {
+        let genesis = Genesis {
+            timestamp: 12,
+            ..strict_dumb!()
+        };
+        let contract_id = genesis.contract_id();
+        assert_eq!(contract_id, OrdOpRef::Genesis(&genesis).contract_id());
+        let transition = Transition {
+            contract_id,
+            ..strict_dumb!()
+        };
+        assert_eq!(
+            contract_id,
+            OrdOpRef::Transition(&transition, strict_dumb!(), strict_dumb!()).contract_id()
+        );
     }
 }
