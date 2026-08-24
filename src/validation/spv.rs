@@ -23,7 +23,8 @@ use bitcoin::{TxMerkleNode, Txid};
 use serde_crate::{Deserialize, Serialize};
 
 use crate::dbc::LIB_NAME_BPCORE;
-use crate::vm::BlockHeight;
+use crate::vm::{BlockHeight, WitnessPos};
+use crate::Layer1;
 
 /// Merkle inclusion proof for a bitcoin transaction
 ///
@@ -89,6 +90,18 @@ impl SpvProof {
             return Err(SpvValidationError::MerkleRootMismatch);
         }
         Ok(())
+    }
+
+    /// The chain position `header` places `txid` at, if this proof verifies
+    /// against it.
+    pub fn verified_pos(
+        &self,
+        txid: Txid,
+        header: &bitcoin::block::Header,
+        layer1: Layer1,
+    ) -> Result<Option<WitnessPos>, SpvValidationError> {
+        self.validate(txid, header)?;
+        Ok(WitnessPos::with(layer1, self.block_height, header.time as i64))
     }
 }
 

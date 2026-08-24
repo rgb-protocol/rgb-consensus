@@ -38,7 +38,7 @@ use crate::seals::txout::{CloseMethod, Witness};
 use crate::single_use_seals::SealWitness;
 use crate::txout::BlindSeal;
 use crate::validation::{OpoutsDagInfo, SchemaRules};
-use crate::vm::{ContractStateAccess, ContractStateEvolve, OrdOpRef, WitnessOrd, WitnessPos};
+use crate::vm::{ContractStateAccess, ContractStateEvolve, OrdOpRef, WitnessOrd};
 use crate::{
     AssignmentType, Assignments, BundleId, ChainNet, ContractId, KnownTransition, OpId, Operation,
     Opout, RevealedState, SchemaId, TransitionBundle,
@@ -454,13 +454,13 @@ impl<
         if let Some(spv_proof) = spv_proof_opt {
             match self.resolver.get_block_header(spv_proof.block_height) {
                 Ok(header) => {
-                    let witness_pos = spv_proof.validate(witness_id, &header).ok().and_then(|_| {
-                        WitnessPos::with(
-                            self.chain_net.layer1(),
-                            spv_proof.block_height,
-                            header.time as i64,
-                        )
-                    });
+                    // a proof which does not verify and a header which makes no
+                    // position are the same thing here: neither yields an ord,
+                    // and neither is a reason to reject
+                    let witness_pos = spv_proof
+                        .verified_pos(witness_id, &header, self.chain_net.layer1())
+                        .ok()
+                        .flatten();
                     match witness_pos {
                         Some(witness_pos) => {
                             let ord = WitnessOrd::Mined(witness_pos);
