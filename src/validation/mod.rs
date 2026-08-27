@@ -37,10 +37,11 @@ pub use schema_def::{
     SchemaDefError, SchemaDefinition, SchemaRules, TypeLibs, SCHEMA_MAX_TYPE_LIBS,
 };
 pub use spv::{SpvProof, SpvValidationError};
-pub use status::{Failure, Info, Status, UnsafeHistoryMap, Validity, Warning};
+pub use status::{Failure, Status, UnsafeHistoryMap, Validity, Warning};
 pub use validator::{
-    ResolveWitness, ValidationConfig, ValidationError, Validator, WitnessOrdProvider,
-    WitnessResolverError, WitnessStatus,
+    CheckedWitnessResolver, PendingValidation, ResolveWitness, ValidationConfig, ValidationError,
+    Validator, WitnessOrdProvider, WitnessResolution, WitnessResolverError, WitnessSafety,
+    WitnessStatus, WitnessTask,
 };
 
 pub use crate::vm::ExternalAnchor;

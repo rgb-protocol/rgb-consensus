@@ -20,7 +20,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use core::ops::AddAssign;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Display, Formatter};
 
@@ -59,7 +58,6 @@ pub enum Validity {
 )]
 pub struct Status {
     pub warnings: Vec<Warning>,
-    pub info: Vec<Info>,
     pub tx_ord_map: HashMap<Txid, WitnessOrd>,
     pub dag_data_opt: Option<OpoutsDagData>,
 }
@@ -77,36 +75,12 @@ impl Display for Status {
             }
         }
 
-        if !self.info.is_empty() {
-            f.write_str("Validation info:\n")?;
-            for info in &self.info {
-                writeln!(f, "- {info}")?;
-            }
-        }
-
         Ok(())
-    }
-}
-
-impl AddAssign for Status {
-    fn add_assign(&mut self, rhs: Self) {
-        self.warnings.extend(rhs.warnings);
-        self.info.extend(rhs.info);
     }
 }
 
 impl Status {
     pub fn new() -> Self { Self::default() }
-
-    pub fn add_warning(&mut self, warning: impl Into<Warning>) -> &Self {
-        self.warnings.push(warning.into());
-        self
-    }
-
-    pub fn add_info(&mut self, info: impl Into<Info>) -> &Self {
-        self.info.push(info.into());
-        self
-    }
 
     pub fn validity(&self) -> Validity {
         if !self.warnings.is_empty() {
@@ -266,9 +240,6 @@ pub enum Failure {
     /// operation {0} commits to a script which ID {1} doesn't match the actual one {2}.
     ScriptIDMismatch(OpId, LibId, LibId),
 
-    /// {0} external anchor(s) were not resolved before finalization.
-    ExternalAnchorsPending(usize),
-
     /// Custom error by external services on top of RGB Consensus.
     #[display(inner)]
     Custom(String),
@@ -290,19 +261,6 @@ pub enum Warning {
     InvalidSpvProof(BundleId, Txid),
 
     /// Custom warning by external services on top of RGB Consensus.
-    #[display(inner)]
-    Custom(String),
-}
-
-#[derive(Clone, PartialEq, Eq, Debug, Display, From)]
-#[cfg_attr(
-    feature = "serde",
-    derive(Serialize, Deserialize),
-    serde(crate = "serde_crate", rename_all = "camelCase")
-)]
-#[display(doc_comments)]
-pub enum Info {
-    /// Custom info by external services on top of RGB Consensus.
     #[display(inner)]
     Custom(String),
 }

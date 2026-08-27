@@ -112,6 +112,29 @@ impl<'consignment, C: ConsignmentApi> CheckedConsignment<'consignment, C> {
     pub fn new(consignment: &'consignment C) -> Self { Self(consignment) }
 }
 
+impl<'consignment, C: ConsignmentApi> CheckedConsignment<'consignment, C> {
+    /// Bundles with the lifetime of the wrapped consignment rather than of the
+    /// borrow of `self`.
+    ///
+    /// This is what lets the validator keep the walk in a field and hold a
+    /// bundle while mutating its own state, which in turn is what makes phase 1
+    /// resumable one bundle at a time. Going through
+    /// [`ConsignmentApi::bundles_info`] would tie the iterator and its items to
+    /// `&self` and make that borrow conflict.
+    pub fn bundles_info_ref(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            &'consignment TransitionBundle,
+            &'consignment EAnchor,
+            &'consignment Tx,
+            Option<&'consignment SpvProof>,
+        ),
+    > + 'consignment {
+        self.0.bundles_info()
+    }
+}
+
 impl<C: ConsignmentApi> ConsignmentApi for CheckedConsignment<'_, C> {
     fn genesis(&self) -> &Genesis { self.0.genesis() }
 
@@ -138,6 +161,10 @@ pub trait ConsignmentApi {
     fn genesis(&self) -> &Genesis;
 
     /// Returns iterator over all bundle information in the consignment.
+    ///
+    /// The validator advances this one bundle at a time rather than running it
+    /// to completion, which is what lets phase 1 be driven by the caller: it
+    /// only ever walks forward, and stops at the first `None`.
     fn bundles_info(
         &self,
     ) -> impl Iterator<Item = (&TransitionBundle, &EAnchor, &Tx, Option<&SpvProof>)>;
