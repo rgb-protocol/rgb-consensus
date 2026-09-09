@@ -260,7 +260,7 @@ impl SchemaRules {
     /// They fail fast, and blame the schema, when the separately stored parts
     /// are put back together inconsistently - without them the same defect
     /// surfaces mid-validation as a failure of the consignment being validated.
-    pub fn with(
+    pub(crate) fn with(
         schema: Schema,
         trusted_types: TypeSystem,
         scripts: Scripts,
