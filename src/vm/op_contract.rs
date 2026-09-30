@@ -643,7 +643,10 @@ impl<S: ContractStateAccess> Bytecode for ContractOp<S> {
             ContractOp::Sas(owned_type) => writer.write_u16(*owned_type)?,
             ContractOp::Sps(owned_type) => writer.write_u16(*owned_type)?,
 
-            ContractOp::Vts(reg_s) => writer.write_u4(*reg_s)?,
+            ContractOp::Vts(reg_s) => {
+                writer.write_u4(*reg_s)?;
+                writer.write_u4(u4::ZERO)?; // pad to a full byte
+            }
 
             ContractOp::Plc(reg_amount, reg_before_block) => {
                 writer.write_u4(reg_amount)?;
@@ -717,7 +720,11 @@ impl<S: ContractStateAccess> Bytecode for ContractOp<S> {
             INSTR_SAS => Self::Sas(reader.read_u16()?.into()),
             INSTR_SPS => Self::Sps(reader.read_u16()?.into()),
 
-            INSTR_VTS => Self::Vts(reader.read_u4()?.into()),
+            INSTR_VTS => {
+                let i = Self::Vts(reader.read_u4()?.into());
+                reader.read_u4()?; // discard padding bits
+                i
+            }
 
             INSTR_PLC => Self::Plc(reader.read_u4()?.into(), reader.read_u4()?.into()),
 
