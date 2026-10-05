@@ -762,8 +762,7 @@ dependencies = [
 [[package]]
 name = "rgb-aluvm"
 version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b371aad57bb172879ef661d1cc102dadca47ff703def8d916b31ca772180960"
+source = "git+https://github.com/rgb-protocol/rgb-aluvm?rev=53b2809#53b28092316fc92e836dbae2437f266d40ccee7d"
 dependencies = [
  "amplify",
  "baid64",
@@ -781,8 +780,7 @@ dependencies = [
 [[package]]
 name = "rgb-ascii-armor"
 version = "1.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "559bf258d790594c2e6e6c31ec40d0f70e0511cd05ab1dca99d40207f2bbf1f7"
+source = "git+https://github.com/rgb-protocol/rgb-ascii-armor?rev=a9bd205#a9bd20536aa3b0a1f52ad278f1eaebe82eac1ce1"
 dependencies = [
  "amplify",
  "baid64",
@@ -844,8 +842,7 @@ dependencies = [
 [[package]]
 name = "rgb-strict-types"
 version = "1.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7cb1f717f2235eedfb147cfd5a47ccdb6660168e38f1acf2afcb199d19104e2f"
+source = "git+https://github.com/rgb-protocol/rgb-strict-types?rev=2f9d542#2f9d5428509455be9b1edc803154fe372f6f0531"
 dependencies = [
  "amplify",
  "baid64",

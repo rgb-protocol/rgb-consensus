@@ -86,3 +86,6 @@ features = ["all"]
 
 [patch.crates-io]
 rgb-strict-encoding = { git = "https://github.com/rgb-protocol/rgb-strict-encoding", rev = "1598d8c" }
+rgb-ascii-armor = { git = "https://github.com/rgb-protocol/rgb-ascii-armor", rev = "a9bd205" }
+rgb-strict-types = { git = "https://github.com/rgb-protocol/rgb-strict-types", rev = "2f9d542" }
+rgb-aluvm = { git = "https://github.com/rgb-protocol/rgb-aluvm", rev = "53b2809" }
