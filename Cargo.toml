@@ -17,7 +17,7 @@ name = "rgbcore"
 crate-type = ["cdylib", "rlib"] # We need this for WASM
 
 [dependencies]
-rgb-aluvm = { version = "~0.11.1", features = [
+rgb-aluvm = { version = "~0.11.2-rc.1", features = [
     "rgb-ascii-armor",
     "std",
 ] }
@@ -45,10 +45,10 @@ serde_crate = { package = "serde", version = "1", features = [
     "derive",
 ], optional = true }
 sha2 = "0.11.0"
-rgb-strict-encoding = { version = "~1.0.4", features = [
+rgb-strict-encoding = { version = "~1.0.5", features = [
     "bitcoin",
 ] }
-rgb-strict-types = { version = "~1.0.4", features = [
+rgb-strict-types = { version = "~1.0.5", features = [
     "armor",
 ] }
 
@@ -83,9 +83,3 @@ wasm-bindgen-test = "0.3"
 
 [package.metadata.docs.rs]
 features = ["all"]
-
-[patch.crates-io]
-rgb-strict-encoding = { git = "https://github.com/rgb-protocol/rgb-strict-encoding", rev = "1598d8c" }
-rgb-ascii-armor = { git = "https://github.com/rgb-protocol/rgb-ascii-armor", rev = "a9bd205" }
-rgb-strict-types = { git = "https://github.com/rgb-protocol/rgb-strict-types", rev = "2f9d542" }
-rgb-aluvm = { git = "https://github.com/rgb-protocol/rgb-aluvm", rev = "53b2809" }
