@@ -65,8 +65,8 @@ impl<T> BuilderSealTy for T where T: TxoSeal
 /// A seal which can be either revealed (the full seal is known) or concealed
 /// (only its secret hash is known).
 ///
-/// It is the seal of an [`Assign`](super::Assign)ment, the seal produced by the
-/// operation builder, and the element type of consignment history terminals.
+/// It is the seal of an [`Assign`](super::Assign)ment and the seal produced by
+/// the operation builder.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, From)]
 #[derive(StrictType, StrictDumb, StrictEncode, StrictDecode)]
 #[strict_type(

@@ -40,8 +40,8 @@ use crate::txout::BlindSeal;
 use crate::validation::{EAnchor, OpsDag, SchemaRules, SpvProof};
 use crate::vm::{ContractStateAccess, ContractStateEvolve, ExternalAnchor, OrdOpRef, WitnessOrd};
 use crate::{
-    AssignmentType, Assignments, BuilderSeal, BundleId, ChainNet, ContractId, GraphSeal,
-    KnownTransition, Layer1, OpId, Operation, Opout, RevealedState, SchemaId, TransitionBundle,
+    AssignmentType, Assignments, BundleId, ChainNet, ContractId, KnownTransition, Layer1, OpId,
+    Operation, Opout, RevealedState, SchemaId, TransitionBundle,
 };
 
 /// Error validating a consignment.
@@ -544,13 +544,6 @@ pub struct Validator<'consignment, S: ContractStateAccess + ContractStateEvolve,
     safe_height: Option<NonZeroU32>,
     ops_dag: Option<RefCell<OpsDag>>,
 
-    // Owned copy of the history terminals, drained as we visit the bundles they
-    // reference. Each terminal seal is checked against its bundle's assignments;
-    // any entry left over at the end references an absent bundle.
-    terminals: BTreeMap<BundleId, BTreeSet<BuilderSeal<GraphSeal>>>,
-    // Opouts the terminal seals resolve to, checked to be unspent once all the
-    // bundles have been processed.
-    terminal_opouts: BTreeMap<Opout, BundleId>,
     // The bundles left to process, so the walk can be resumed.
     bundles: Box<
         dyn Iterator<
@@ -593,8 +586,6 @@ impl<'consignment, S: ContractStateAccess + ContractStateEvolve, C: ConsignmentA
             ops_dag = Some(RefCell::new(OpsDag::new()));
         }
 
-        let terminals = consignment.terminals();
-
         let bundles = Box::new(consignment.bundles_info_ref());
 
         Self {
@@ -608,8 +599,6 @@ impl<'consignment, S: ContractStateAccess + ContractStateEvolve, C: ConsignmentA
             contract_state: Rc::new(RefCell::new(S::init(context))),
             safe_height: validation_config.safe_height,
             ops_dag,
-            terminals,
-            terminal_opouts: BTreeMap::new(),
             bundles,
             witnesses: BTreeMap::new(),
             pending_external_anchors: RefCell::new(BTreeSet::new()),
@@ -694,19 +683,6 @@ impl<'consignment, S: ContractStateAccess + ContractStateEvolve, C: ConsignmentA
 
         let bundle_id = bundle.bundle_id();
         let witness_id = witness_tx.compute_txid();
-        if let Some(seals) = self.terminals.remove(&bundle_id) {
-            for seal in &seals {
-                let opouts = bundle.opouts_assigned_to(seal);
-                if opouts.is_empty() {
-                    return Err(ValidationError::InvalidConsignment(
-                        Failure::TerminalSealMismatch(bundle_id),
-                    ));
-                }
-                self.terminal_opouts
-                    .extend(opouts.into_iter().map(|opout| (opout, bundle_id)));
-            }
-        }
-
         self.witnesses
             .entry(witness_id)
             .or_insert_with(|| PendingWitness {
@@ -743,26 +719,6 @@ impl<'consignment, S: ContractStateAccess + ContractStateEvolve, C: ConsignmentA
     /// When `build_ops_dag` is set, the DAG has no duplicated edges.
     pub fn finish(mut self) -> Result<PendingValidation, ValidationError> {
         while self.next_bundle()?.is_some() {}
-
-        // Any remaining terminal must reference a bundle that is not present in the consignment.
-        if let Some((bundle_id, _)) = self.terminals.iter().next() {
-            return Err(ValidationError::InvalidConsignment(Failure::TerminalBundleAbsent(
-                *bundle_id,
-            )));
-        }
-        // Terminals must be unspent.
-        {
-            let input_opouts = self.input_opouts.borrow();
-            if let Some((opout, bundle_id)) = self
-                .terminal_opouts
-                .iter()
-                .find(|(opout, _)| input_opouts.contains(opout))
-            {
-                return Err(ValidationError::InvalidConsignment(Failure::TerminalSealSpent(
-                    *bundle_id, *opout,
-                )));
-            }
-        }
 
         let ops_dag = self.ops_dag.map(RefCell::into_inner);
 
