@@ -31,7 +31,7 @@ use strict_types::SemId;
 use crate::commit_verify::mpc::InvalidProof;
 use crate::schema::{self, SchemaId};
 use crate::seals::txout::CloseMethod;
-use crate::validation::OpoutsDagData;
+use crate::validation::OpsDag;
 use crate::vm::WitnessOrd;
 use crate::{
     BundleId, ChainNet, ContractId, OccurrencesMismatch, OpFullType, OpId, Opout,
@@ -59,7 +59,9 @@ pub enum Validity {
 pub struct Status {
     pub warnings: Vec<Warning>,
     pub tx_ord_map: HashMap<Txid, WitnessOrd>,
-    pub dag_data_opt: Option<OpoutsDagData>,
+    /// The operations DAG, when built. It has no duplicated edges and each opout is spent at
+    /// most once.
+    pub ops_dag: Option<OpsDag>,
 }
 
 impl Display for Status {
