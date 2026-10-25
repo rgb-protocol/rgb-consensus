@@ -180,11 +180,11 @@ pub enum ContractOp<S: ContractStateAccess> {
     #[display("vts     {0}")]
     Vts(RegS),
 
-    /// Push a mint anchor for the amount and after-block in the given `a64` registers.
+    /// Push a mint anchor for the amount and before-block in the given `a64` registers.
     ///
     /// The first argument specifies which `a64[N]` register holds the amount to
     /// include in the external anchor, the second which `a64[M]` register holds
-    /// the external-chain block number after which the mint event must be
+    /// the external-chain block number before which the mint must be
     /// looked for. Sets `st0` to `false` and stops if either register is absent
     /// or the amount is zero.
     #[display("pma     a64{0},a64{1}")]
@@ -219,9 +219,9 @@ impl<S: ContractStateAccess> InstructionSet for ContractOp<S> {
 
             ContractOp::Vts(_) => bset![],
 
-            ContractOp::Pma(reg_amount, reg_after_block) => bset![
+            ContractOp::Pma(reg_amount, reg_before_block) => bset![
                 Reg::A(RegA::A64, Reg32::from(*reg_amount)),
-                Reg::A(RegA::A64, Reg32::from(*reg_after_block))
+                Reg::A(RegA::A64, Reg32::from(*reg_before_block))
             ],
 
             ContractOp::Fail(_, _) => bset![],
@@ -529,7 +529,7 @@ impl<S: ContractStateAccess> InstructionSet for ContractOp<S> {
                     }
                 }
             },
-            ContractOp::Pma(reg_amount, reg_after_block) => {
+            ContractOp::Pma(reg_amount, reg_before_block) => {
                 let Some(amount) = *regs.get_n(RegA::A64, Reg32::from(*reg_amount)) else {
                     fail!()
                 };
@@ -537,18 +537,18 @@ impl<S: ContractStateAccess> InstructionSet for ContractOp<S> {
                 if amount == 0 {
                     fail!()
                 }
-                let Some(after_block) = *regs.get_n(RegA::A64, Reg32::from(*reg_after_block))
+                let Some(before_block) = *regs.get_n(RegA::A64, Reg32::from(*reg_before_block))
                 else {
                     fail!()
                 };
-                let after_block = u64::from(after_block);
+                let before_block = u64::from(before_block);
                 context
                     .pending_external_anchors
                     .borrow_mut()
                     .insert(ExternalAnchor::MintEvent {
                         opid: context.op_info.id,
                         amount,
-                        after_block,
+                        before_block,
                     });
             }
             // All other future unsupported operations, which must set `st0` to `false`.
@@ -647,9 +647,9 @@ impl<S: ContractStateAccess> Bytecode for ContractOp<S> {
 
             ContractOp::Vts(reg_s) => writer.write_u4(*reg_s)?,
 
-            ContractOp::Pma(reg_amount, reg_after_block) => {
+            ContractOp::Pma(reg_amount, reg_before_block) => {
                 writer.write_u4(reg_amount)?;
-                writer.write_u4(reg_after_block)?;
+                writer.write_u4(reg_before_block)?;
             }
 
             ContractOp::Fail(_, _) => {}

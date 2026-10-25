@@ -32,10 +32,10 @@ use crate::OpId;
     serde(crate = "serde_crate", rename_all = "camelCase")
 )]
 pub enum ExternalAnchor {
-    /// A mint event on Ethereum for `amount`, to be looked for after block `after_block`.
+    /// A mint event on Ethereum for `amount`, to be looked for before block `before_block`.
     MintEvent {
         opid: OpId,
         amount: u64,
-        after_block: u64,
+        before_block: u64,
     },
 }
