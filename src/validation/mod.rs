@@ -23,7 +23,7 @@
 mod schema;
 mod schema_def;
 mod logic;
-mod opouts_dag;
+mod ops_dag;
 mod spv;
 mod validator;
 mod consignment;
@@ -32,7 +32,7 @@ mod commitments;
 
 pub use commitments::{DbcError, DbcProof, EAnchor};
 pub use consignment::{CheckedConsignment, ConsignmentApi, OpRef, Scripts, CONSIGNMENT_MAX_LIBS};
-pub use opouts_dag::{OpoutsDag, OpoutsDagData, OpoutsDagIndex, OpoutsDagInfo};
+pub use ops_dag::OpsDag;
 pub use schema_def::{
     SchemaDefError, SchemaDefinition, SchemaRules, TypeLibs, SCHEMA_MAX_TYPE_LIBS,
 };
