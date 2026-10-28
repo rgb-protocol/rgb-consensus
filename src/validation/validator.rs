@@ -37,7 +37,7 @@ use crate::operation::seal::ExposedSeal;
 use crate::seals::txout::{CloseMethod, Witness};
 use crate::single_use_seals::SealWitness;
 use crate::txout::BlindSeal;
-use crate::validation::{EAnchor, OpoutsDagData, OpoutsDagInfo, SchemaRules, SpvProof};
+use crate::validation::{EAnchor, OpsDag, SchemaRules, SpvProof};
 use crate::vm::{ContractStateAccess, ContractStateEvolve, ExternalAnchor, OrdOpRef, WitnessOrd};
 use crate::{
     AssignmentType, Assignments, BuilderSeal, BundleId, ChainNet, ContractId, GraphSeal,
@@ -202,7 +202,7 @@ impl<R: ResolveWitness> ResolveWitness for CheckedWitnessResolver<R> {
 pub struct ValidationConfig {
     pub chain_net: ChainNet,
     pub safe_height: Option<NonZeroU32>,
-    pub build_opouts_dag: bool,
+    pub build_ops_dag: bool,
 }
 
 /// A witness transaction the validation is still waiting on.
@@ -358,8 +358,9 @@ struct PendingWitness {
 pub struct PendingValidation {
     /// Warnings raised so far.
     pub warnings: Vec<Warning>,
-    /// The operations DAG, when `build_opouts_dag` was set.
-    pub dag_data_opt: Option<OpoutsDagData>,
+    /// The operations DAG, when `build_ops_dag` was set. It has no duplicated edges and
+    /// each opout is spent at most once.
+    pub ops_dag: Option<OpsDag>,
 
     chain_net: ChainNet,
     safe_height: Option<NonZeroU32>,
@@ -521,7 +522,7 @@ impl PendingValidation {
                 .into_iter()
                 .filter_map(|(txid, witness)| witness.ord.map(|ord| (txid, ord)))
                 .collect(),
-            dag_data_opt: self.dag_data_opt,
+            ops_dag: self.ops_dag,
         }
     }
 }
@@ -542,7 +543,7 @@ pub struct Validator<'consignment, S: ContractStateAccess + ContractStateEvolve,
     opout_assigns: RefCell<BTreeMap<Opout, RevealedAssign>>,
 
     safe_height: Option<NonZeroU32>,
-    opouts_dag_info: Option<RefCell<OpoutsDagInfo>>,
+    ops_dag: Option<RefCell<OpsDag>>,
 
     // Owned copy of the history terminals, drained as we visit the bundles they
     // reference. Each terminal seal is checked against its bundle's assignments;
@@ -588,9 +589,9 @@ impl<'consignment, S: ContractStateAccess + ContractStateEvolve, C: ConsignmentA
 
         let opout_assigns = RefCell::new(BTreeMap::<Opout, RevealedAssign>::new());
 
-        let mut opouts_dag_info = None;
-        if validation_config.build_opouts_dag {
-            opouts_dag_info = Some(RefCell::new(OpoutsDagInfo::new()));
+        let mut ops_dag = None;
+        if validation_config.build_ops_dag {
+            ops_dag = Some(RefCell::new(OpsDag::new()));
         }
 
         let terminals = consignment.terminals();
@@ -607,7 +608,7 @@ impl<'consignment, S: ContractStateAccess + ContractStateEvolve, C: ConsignmentA
             opout_assigns,
             contract_state: Rc::new(RefCell::new(S::init(context))),
             safe_height: validation_config.safe_height,
-            opouts_dag_info,
+            ops_dag,
             terminals,
             terminal_opouts: BTreeMap::new(),
             bundles,
@@ -620,6 +621,9 @@ impl<'consignment, S: ContractStateAccess + ContractStateEvolve, C: ConsignmentA
     /// resolver function returning transaction and its fee for a given
     /// transaction id, and returns a validation object listing all detected
     /// failures, warnings and additional information.
+    ///
+    /// When `build_ops_dag` is set, the DAG has no duplicated edges and each opout is spent
+    /// at most once.
     pub fn validate<R: ResolveWitness>(
         consignment: &'consignment C,
         schema_rules: &'consignment SchemaRules,
@@ -643,6 +647,9 @@ impl<'consignment, S: ContractStateAccess + ContractStateEvolve, C: ConsignmentA
     ///
     /// Equivalent to [`Self::start`] followed by [`Self::finish`]. Use those two
     /// directly to get hold of each witness as it is discovered.
+    ///
+    /// When `build_ops_dag` is set, the DAG has no duplicated edges and each opout is spent
+    /// at most once.
     pub fn validate_deterministic(
         consignment: &'consignment C,
         schema_rules: &'consignment SchemaRules,
@@ -721,8 +728,9 @@ impl<'consignment, S: ContractStateAccess + ContractStateEvolve, C: ConsignmentA
             self.validate_transition(known_transition, bundle, witness_tx, anchor)?;
             let KnownTransition { opid, transition } = known_transition;
             self.process_assignments(*opid, Some(witness_id), &transition.assignments)?;
-            if let Some(ref mut dag_info) = self.opouts_dag_info {
-                dag_info.borrow_mut().connect_transition(transition, opid);
+            // each transition is connected once, and no opout is spent twice
+            if let Some(ref mut dag_info) = self.ops_dag {
+                dag_info.borrow_mut().connect_transition(transition, *opid);
             }
         }
 
@@ -734,6 +742,9 @@ impl<'consignment, S: ContractStateAccess + ContractStateEvolve, C: ConsignmentA
     /// Safe to call at any point: it drives [`Self::next_bundle`] to exhaustion
     /// first, so a caller that ignored the walk gets the same result as one that
     /// drove it to the end.
+    ///
+    /// When `build_ops_dag` is set, the DAG has no duplicated edges and each opout is spent
+    /// at most once.
     pub fn finish(mut self) -> Result<PendingValidation, ValidationError> {
         while self.next_bundle()?.is_some() {}
 
@@ -757,14 +768,11 @@ impl<'consignment, S: ContractStateAccess + ContractStateEvolve, C: ConsignmentA
             }
         }
 
-        let dag_data_opt = self
-            .opouts_dag_info
-            .as_ref()
-            .map(|dag_info| dag_info.borrow().to_opouts_dag_data());
+        let ops_dag = self.ops_dag.map(RefCell::into_inner);
 
         Ok(PendingValidation {
             warnings: Vec::new(),
-            dag_data_opt,
+            ops_dag,
             chain_net: self.chain_net,
             safe_height: self.safe_height,
             witnesses: self.witnesses,
@@ -807,13 +815,12 @@ impl<'consignment, S: ContractStateAccess + ContractStateEvolve, C: ConsignmentA
         witness_id: Option<Txid>,
         assignments: &Assignments<impl ExposedSeal>,
     ) -> Result<(), ValidationError> {
-        let mut output_nodes = Vec::new();
+        if let Some(dag_info) = &self.ops_dag {
+            dag_info.borrow_mut().register_op(opid);
+        }
         for (ty, ass) in assignments.iter() {
             for no in 0..ass.len_u16() {
                 let opout = Opout::new(opid, *ty, no);
-                if let Some(dag_info) = &self.opouts_dag_info {
-                    output_nodes.push(dag_info.borrow_mut().register_output(opout));
-                }
                 let Ok(revealed_assign) = ass.to_revealed_assign_at(no, witness_id) else {
                     continue;
                 };
@@ -821,9 +828,6 @@ impl<'consignment, S: ContractStateAccess + ContractStateEvolve, C: ConsignmentA
                     .borrow_mut()
                     .insert(opout, revealed_assign);
             }
-        }
-        if let Some(dag_info) = &self.opouts_dag_info {
-            dag_info.borrow_mut().cache_outputs(&opid, output_nodes);
         }
         Ok(())
     }
