@@ -20,7 +20,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::ParseIntError;
 use std::str::FromStr;
 
@@ -230,24 +230,59 @@ impl TransitionBundle {
         if self.known_transitions_contain_opid(&opid) {
             return Ok(false);
         }
-        if let Some((_, child_opid)) = self.input_map.iter().find(|(opout, _)| opout.op == opid) {
-            if let Some(pos) = self
-                .known_transitions
-                .iter()
-                .position(|kt| kt.opid == *child_opid)
-            {
-                // keep bundle transitions sorted if they are interdependent
-                let mut known_transitions = self.known_transitions.to_unconfined();
-                known_transitions.insert(pos, KnownTransition { opid, transition });
-                // from_checked is safe because known_transitions has same size as input map
-                self.known_transitions = Confined::from_checked(known_transitions);
-                return Ok(true);
-            }
-        }
+        let has_known_child = self.input_map.iter().any(|(opout, child_opid)| {
+            opout.op == opid && self.known_transitions_contain_opid(child_opid)
+        });
         self.known_transitions
             .push(KnownTransition { opid, transition })
             .expect("same size as input map");
+        // keep bundle transitions sorted if they are interdependent
+        if has_known_child {
+            self.sort_known_transitions();
+        }
         Ok(true)
+    }
+
+    /// Sorts the known transitions so that each follows the ones of the bundle it spends from,
+    /// keeping their order otherwise.
+    fn sort_known_transitions(&mut self) {
+        let order = self
+            .known_transitions
+            .iter()
+            .map(|kt| kt.opid)
+            .collect::<Vec<_>>();
+        let mut unsorted = self
+            .known_transitions
+            .to_unconfined()
+            .into_iter()
+            .map(|kt| (kt.opid, kt))
+            .collect::<BTreeMap<_, _>>();
+        let mut sorted = Vec::with_capacity(order.len());
+        for opid in order {
+            // depth-first, placing the unsorted parents of a transition before it. Opids commit
+            // to the inputs, so transitions cannot spend from each other in a cycle
+            let mut stack = vec![opid];
+            while let Some(&top) = stack.last() {
+                let Some(kt) = unsorted.get(&top) else {
+                    stack.pop();
+                    continue;
+                };
+                match kt
+                    .transition
+                    .inputs
+                    .iter()
+                    .find(|input| unsorted.contains_key(&input.op))
+                {
+                    Some(input) => stack.push(input.op),
+                    None => {
+                        stack.pop();
+                        sorted.extend(unsorted.remove(&top));
+                    }
+                }
+            }
+        }
+        // from_checked is safe because the transitions are the same
+        self.known_transitions = Confined::from_checked(sorted);
     }
 
     pub fn to_concealed_except(&self, opid: OpId) -> Result<Self, UnrelatedTransition> {
@@ -265,5 +300,93 @@ impl TransitionBundle {
                 _ => unreachable!("same size as input map"),
             })?,
         })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use amplify::confinement::NonEmptyOrdSet;
+
+    use super::*;
+    use crate::{AssignmentType, Inputs};
+
+    const A: AssignmentType = AssignmentType::with(4000);
+
+    fn transition(nonce: u64, inputs: impl IntoIterator<Item = Opout>) -> Transition {
+        let mut transition = Transition::strict_dumb();
+        transition.nonce = nonce;
+        transition.inputs = Inputs::from(NonEmptyOrdSet::from_iter_checked(inputs));
+        transition
+    }
+
+    /// Every transition comes after the ones of the bundle it spends from.
+    fn assert_sorted(bundle: &TransitionBundle) {
+        let opids = bundle
+            .known_transitions
+            .iter()
+            .map(|kt| kt.opid)
+            .collect::<Vec<_>>();
+        for (pos, kt) in bundle.known_transitions.iter().enumerate() {
+            for input in &kt.transition.inputs {
+                if let Some(parent_pos) = opids.iter().position(|opid| *opid == input.op) {
+                    assert!(
+                        parent_pos < pos,
+                        "{} at {pos} spends {} at {parent_pos}: {opids:?}",
+                        kt.opid,
+                        input.op
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn reveal_parent_of_two_children() {
+        // a parent with two children in the same bundle
+        let parent = transition(1, [Opout::new(OpId::from([1; 32]), A, 0)]);
+        let parent_id = parent.id();
+        let child_1 = transition(2, [Opout::new(parent_id, A, 0)]);
+        let child_2 = transition(3, [Opout::new(parent_id, A, 1)]);
+        let input_map = NonEmptyOrdMap::from_iter_checked(
+            parent
+                .inputs
+                .iter()
+                .map(|opout| (*opout, parent_id))
+                .chain(child_1.inputs.iter().map(|opout| (*opout, child_1.id())))
+                .chain(child_2.inputs.iter().map(|opout| (*opout, child_2.id()))),
+        );
+
+        // the bundle is revealed one transition at a time, the parent last
+        let mut bundle = TransitionBundle {
+            input_map,
+            known_transitions: NonEmptyVec::with(KnownTransition::new(child_2.id(), child_2)),
+        };
+        assert!(bundle.reveal_transition(child_1).unwrap());
+        assert_sorted(&bundle);
+        assert!(bundle.reveal_transition(parent).unwrap());
+        assert_sorted(&bundle);
+    }
+
+    #[test]
+    fn reveal_middle_of_chain() {
+        // a chain of three transitions in the same bundle
+        let grandparent = transition(1, [Opout::new(OpId::from([1; 32]), A, 0)]);
+        let parent = transition(2, [Opout::new(grandparent.id(), A, 0)]);
+        let child = transition(3, [Opout::new(parent.id(), A, 0)]);
+        let input_map = NonEmptyOrdMap::from_iter_checked(
+            [&grandparent, &parent, &child]
+                .into_iter()
+                .flat_map(|t| t.inputs.iter().map(|opout| (*opout, t.id()))),
+        );
+
+        // the ends are revealed first, unrelated to each other, then the middle one
+        let mut bundle = TransitionBundle {
+            input_map,
+            known_transitions: NonEmptyVec::with(KnownTransition::new(child.id(), child)),
+        };
+        assert!(bundle.reveal_transition(grandparent).unwrap());
+        assert_sorted(&bundle);
+        assert!(bundle.reveal_transition(parent).unwrap());
+        assert_sorted(&bundle);
     }
 }
