@@ -725,3 +725,69 @@ impl<S: ContractStateAccess> Bytecode for ContractOp<S> {
         })
     }
 }
+
+#[cfg(test)]
+mod test {
+    use aluvm::isa::Instr;
+    use aluvm::library::Lib;
+    use bitcoin::OutPoint as Outpoint;
+
+    use super::*;
+    use crate::vm::{GlobalStateEntry, RgbIsa, UnknownGlobalStateType};
+    use crate::{rgbasm, FungibleState, RevealedData};
+
+    /// Contract state for scripts which are assembled but never run
+    #[derive(Copy, Clone, PartialEq, Eq, Debug)]
+    struct NoState;
+
+    struct NoGlobals;
+
+    impl Iterator for NoGlobals {
+        type Item = GlobalStateEntry;
+        fn next(&mut self) -> Option<Self::Item> { None }
+    }
+
+    impl GlobalsIter for NoGlobals {
+        fn at_depth(&self, _depth: usize) -> Option<Self::Item> { None }
+    }
+
+    impl ContractStateAccess for NoState {
+        fn global(
+            &self,
+            ty: GlobalStateType,
+        ) -> Result<impl GlobalsIter<Item = impl Borrow<GlobalStateEntry>>, UnknownGlobalStateType>
+        {
+            Err::<NoGlobals, _>(UnknownGlobalStateType(ty))
+        }
+
+        fn rights(&self, _outpoint: Outpoint, _ty: AssignmentType) -> u32 { 0 }
+
+        fn fungible(
+            &self,
+            _outpoint: Outpoint,
+            _ty: AssignmentType,
+        ) -> impl DoubleEndedIterator<Item = FungibleState> {
+            std::iter::empty()
+        }
+
+        fn data(
+            &self,
+            _outpoint: Outpoint,
+            _ty: AssignmentType,
+        ) -> impl DoubleEndedIterator<Item = impl Borrow<RevealedData>> {
+            std::iter::empty::<RevealedData>()
+        }
+    }
+
+    #[test]
+    fn vts_is_byte_aligned() {
+        // a 4-bit vts would leave `ret` mid-byte, and the assembler would drop its last half byte
+        let code = rgbasm! {
+            vts     s16[0];
+            ret;
+        };
+        let lib = Lib::assemble::<Instr<RgbIsa<NoState>>>(&code).unwrap();
+        assert_eq!(lib.code.as_ref().len(), 3, "vts must take two full bytes");
+        assert_eq!(lib.disassemble::<Instr<RgbIsa<NoState>>>().unwrap(), code);
+    }
+}
