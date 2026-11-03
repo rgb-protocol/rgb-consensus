@@ -16,26 +16,33 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! [`ExternalAnchor`]: the one bridge-related type the consensus layer acts on.
+//! [`Claim`]: the one bridge-related type the consensus layer acts on.
 //!
-//! It is produced by the `pma` AluVM opcode during validation and consumed by the caller's
-//! external-anchor resolver.
+//! It is pushed by the `plc` AluVM opcode during validation and consumed by the caller's
+//! claim resolver.
 
 use crate::OpId;
 
-/// External anchors are emitted by the `pma` AluVM opcode and must be resolved
-/// by the caller before finalising BFA mint validation.
+/// A claim about an external system, pushed by the `plc` AluVM opcode.
+///
+/// Consensus cannot check it, so the caller must confirm it before validation
+/// is finalised.
 #[derive(Clone, Debug, PartialEq, Eq, Ord, PartialOrd)]
 #[cfg_attr(
     feature = "serde",
     derive(Serialize, Deserialize),
     serde(crate = "serde_crate", rename_all = "camelCase")
 )]
-pub enum ExternalAnchor {
-    /// A mint event on Ethereum for `amount`, to be looked for before block `before_block`.
-    MintEvent {
+pub enum Claim {
+    /// A lock of `amount` on the bridge, made for operation `opid` and recorded before block
+    /// `before_block` of the bridge's chain.
+    Lock {
+        /// Id of the operation which pushed the claim; the lock must be made for the same id.
         opid: OpId,
+        /// Amount locked; the lock must carry exactly the same amount.
         amount: u64,
+        /// Block number on the bridge's chain before which the lock must have been recorded,
+        /// exclusive.
         before_block: u64,
     },
 }

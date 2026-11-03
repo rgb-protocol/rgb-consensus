@@ -38,7 +38,7 @@ use crate::seals::txout::{CloseMethod, Witness};
 use crate::single_use_seals::SealWitness;
 use crate::txout::BlindSeal;
 use crate::validation::{EAnchor, OpsDag, SchemaRules, SpvProof};
-use crate::vm::{ContractStateAccess, ContractStateEvolve, ExternalAnchor, OrdOpRef, WitnessOrd};
+use crate::vm::{Claim, ContractStateAccess, ContractStateEvolve, OrdOpRef, WitnessOrd};
 use crate::{
     AssignmentType, Assignments, BundleId, ChainNet, ContractId, KnownTransition, Layer1, OpId,
     Operation, Opout, RevealedState, SchemaId, TransitionBundle,
@@ -60,10 +60,10 @@ pub enum ValidationError {
     ResolverError(WitnessResolverError),
     /// a resolution was reported for witness {0}, which this validation is not waiting on
     UnknownWitness(Txid),
-    /// a resolution was reported for an external anchor this validation is not waiting on
-    UnknownAnchor,
-    /// {0} external anchor(s) await confirmation, which a witness resolver cannot provide
-    ExternalAnchorsPending(usize),
+    /// a resolution was reported for a claim this validation is not waiting on
+    UnknownClaim,
+    /// {0} claim(s) await confirmation, which a witness resolver cannot provide
+    PendingClaims(usize),
 }
 
 /// Error resolving witness.
@@ -366,8 +366,8 @@ pub struct PendingValidation {
     // Keyed by witness txid: a transaction has one ordering.
     witnesses: BTreeMap<Txid, PendingWitness>,
     // Unique by construction, so confirming one is a move between the two.
-    anchors_pending: BTreeSet<ExternalAnchor>,
-    anchors_resolved: BTreeSet<ExternalAnchor>,
+    pending_claims: BTreeSet<Claim>,
+    resolved_claims: BTreeSet<Claim>,
     unsafe_history: HashMap<u32, HashSet<Txid>>,
 }
 
@@ -385,33 +385,34 @@ impl PendingValidation {
             })
     }
 
-    /// The external anchors still waiting to be confirmed.
+    /// The claims still waiting to be confirmed.
     ///
     /// Consensus cannot resolve these itself: they reference systems it knows
-    /// nothing about (e.g. an Ethereum event log). Same convention as
+    /// nothing about (e.g. a lock held by a bridge on another chain, such as in
+    /// an EVM contract's state). Same convention as
     /// [`Self::unresolved_witnesses`]: after a partial failure this is exactly
     /// what is left.
-    pub fn unresolved_anchors(&self) -> impl Iterator<Item = &ExternalAnchor> + '_ {
-        self.anchors_pending.iter()
+    pub fn unresolved_claims(&self) -> impl Iterator<Item = &Claim> + '_ {
+        self.pending_claims.iter()
     }
 
-    /// Marks an external anchor as confirmed by the external system it lives on.
+    /// Marks a claim as confirmed by the external system it refers to.
     ///
-    /// Confirming the same anchor twice is harmless; one the validation never
+    /// Confirming the same claim twice is harmless; one the validation never
     /// asked about is an error.
-    pub fn resolve_anchor(&mut self, anchor: &ExternalAnchor) -> Result<(), ValidationError> {
-        if let Some(anchor) = self.anchors_pending.take(anchor) {
-            self.anchors_resolved.insert(anchor);
-        } else if !self.anchors_resolved.contains(anchor) {
-            return Err(ValidationError::UnknownAnchor);
+    pub fn resolve_claim(&mut self, claim: &Claim) -> Result<(), ValidationError> {
+        if let Some(claim) = self.pending_claims.take(claim) {
+            self.resolved_claims.insert(claim);
+        } else if !self.resolved_claims.contains(claim) {
+            return Err(ValidationError::UnknownClaim);
         }
         Ok(())
     }
 
-    /// Whether every witness has been resolved and every anchor confirmed.
+    /// Whether every witness has been resolved and every claim confirmed.
     pub fn is_resolved(&self) -> bool {
         self.witnesses.values().all(|witness| witness.ord.is_some())
-            && self.anchors_pending.is_empty()
+            && self.pending_claims.is_empty()
     }
 
     /// Checks that `resolver` serves this contract's chain-network pair.
@@ -502,13 +503,13 @@ impl PendingValidation {
     ///
     /// # Panics
     ///
-    /// If a witness or an external anchor is still outstanding, see
+    /// If a witness or a claim is still outstanding, see
     /// [`Self::is_resolved`]. That means the caller did not finish the protocol
     /// and says nothing about the consignment.
     pub fn finalize(mut self) -> Status {
         assert!(
             self.is_resolved(),
-            "validation finalized with witnesses or external anchors still outstanding"
+            "validation finalized with witnesses or claims still outstanding"
         );
         if self.safe_height.is_some() && !self.unsafe_history.is_empty() {
             self.warnings
@@ -557,7 +558,7 @@ pub struct Validator<'consignment, S: ContractStateAccess + ContractStateEvolve,
     >,
     witnesses: BTreeMap<Txid, PendingWitness>,
 
-    pending_external_anchors: RefCell<BTreeSet<ExternalAnchor>>,
+    pending_claims: RefCell<BTreeSet<Claim>>,
 }
 
 impl<'consignment, S: ContractStateAccess + ContractStateEvolve, C: ConsignmentApi>
@@ -601,7 +602,7 @@ impl<'consignment, S: ContractStateAccess + ContractStateEvolve, C: ConsignmentA
             ops_dag,
             bundles,
             witnesses: BTreeMap::new(),
-            pending_external_anchors: RefCell::new(BTreeSet::new()),
+            pending_claims: RefCell::new(BTreeSet::new()),
         }
     }
 
@@ -623,9 +624,9 @@ impl<'consignment, S: ContractStateAccess + ContractStateEvolve, C: ConsignmentA
         pending.resolve_all(resolver)?;
         // whether there are any depends on the consignment, so this is not for `finalize` to
         // panic on
-        let anchors = pending.unresolved_anchors().count();
-        if anchors > 0 {
-            return Err(ValidationError::ExternalAnchorsPending(anchors));
+        let claims = pending.unresolved_claims().count();
+        if claims > 0 {
+            return Err(ValidationError::PendingClaims(claims));
         }
         Ok(pending.finalize())
     }
@@ -728,8 +729,8 @@ impl<'consignment, S: ContractStateAccess + ContractStateEvolve, C: ConsignmentA
             chain_net: self.chain_net,
             safe_height: self.safe_height,
             witnesses: self.witnesses,
-            anchors_pending: self.pending_external_anchors.into_inner(),
-            anchors_resolved: BTreeSet::new(),
+            pending_claims: self.pending_claims.into_inner(),
+            resolved_claims: BTreeSet::new(),
             unsafe_history: HashMap::new(),
         })
     }
@@ -749,13 +750,13 @@ impl<'consignment, S: ContractStateAccess + ContractStateEvolve, C: ConsignmentA
 
         // [VALIDATION]: Validate genesis
         let genesis = self.consignment.genesis().clone();
-        let anchors = self.schema_rules.validate_state(
+        let claims = self.schema_rules.validate_state(
             self.consignment.genesis(),
             OrdOpRef::Genesis(&genesis),
             self.contract_state.clone(),
             &BTreeMap::new(),
         )?;
-        self.pending_external_anchors.borrow_mut().extend(anchors);
+        self.pending_claims.borrow_mut().extend(claims);
         let contract_id = genesis.id();
         self.process_assignments(contract_id, None, &genesis.assignments)?;
         Ok(())
@@ -900,13 +901,13 @@ impl<'consignment, S: ContractStateAccess + ContractStateEvolve, C: ConsignmentA
         }
         let witness = Witness::with(witness_tx.clone(), anchor.dbc_proof.clone());
         self.validate_seal_closing(seals, bundle_id, &witness, anchor.mpc_proof.clone())?;
-        let anchors = self.schema_rules.validate_state(
+        let claims = self.schema_rules.validate_state(
             self.consignment.genesis(),
             OrdOpRef::Transition(transition, witness.txid, bundle_id),
             self.contract_state.clone(),
             &state_by_type,
         )?;
-        self.pending_external_anchors.borrow_mut().extend(anchors);
+        self.pending_claims.borrow_mut().extend(claims);
         Ok(())
     }
 }

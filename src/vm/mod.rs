@@ -25,7 +25,7 @@
 //! Concrete virtual machine implementations must be wrapped into this API
 
 pub mod opcodes;
-pub mod external_anchor;
+pub mod claim;
 mod isa;
 mod op_contract;
 #[macro_use]
@@ -33,11 +33,11 @@ mod macroasm;
 mod contract;
 
 pub use aluvm::aluasm_isa;
+pub use claim::Claim;
 pub use contract::{
     BlockHeight, ContractStateAccess, ContractStateEvolve, GlobalOrd, GlobalStateEntry,
     GlobalsIter, OpOrd, OrdOpRef, UnknownGlobalStateType, WitnessOrd, WitnessPos,
 };
 pub(crate) use contract::{OpInfo, VmContext};
-pub use external_anchor::ExternalAnchor;
 pub use isa::RgbIsa;
 pub use op_contract::ContractOp;

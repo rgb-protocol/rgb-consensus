@@ -37,7 +37,7 @@ use super::Failure;
 use crate::schema::{AssignmentsSchema, GlobalSchema};
 use crate::validation::SchemaRules;
 use crate::vm::{
-    ContractStateAccess, ContractStateEvolve, ExternalAnchor, OpInfo, OrdOpRef, RgbIsa, VmContext,
+    Claim, ContractStateAccess, ContractStateEvolve, OpInfo, OrdOpRef, RgbIsa, VmContext,
 };
 use crate::{
     Assign, AssignmentType, Assignments, AssignmentsRef, ExposedSeal, ExposedState, Genesis,
@@ -56,7 +56,7 @@ impl SchemaRules {
         op: OrdOpRef,
         contract_state: Rc<RefCell<S>>,
         prev_state: &'validator BTreeMap<AssignmentType, Vec<RevealedState>>,
-    ) -> Result<BTreeSet<ExternalAnchor>, ValidationError> {
+    ) -> Result<BTreeSet<Claim>, ValidationError> {
         let schema = self.schema();
         let types = self.types();
         let opid = op.id();
@@ -125,7 +125,7 @@ impl SchemaRules {
             contract_id: genesis.contract_id(),
             op_info,
             contract_state,
-            pending_external_anchors: RefCell::new(BTreeSet::new()),
+            pending_claims: RefCell::new(BTreeSet::new()),
         };
 
         // We need to run scripts as the very last step, since before that
@@ -161,13 +161,13 @@ impl SchemaRules {
                 )));
             }
         }
-        // Extract anchors before consuming contract_state
-        let anchors = context.pending_external_anchors.into_inner();
+        // Extract claims before consuming contract_state
+        let claims = context.pending_claims.into_inner();
         let contract_state = context.contract_state;
         if contract_state.borrow_mut().evolve_state(op).is_err() {
             return Err(ValidationError::InvalidConsignment(Failure::ContractStateFilled(opid)));
         }
-        Ok(anchors)
+        Ok(claims)
     }
 }
 

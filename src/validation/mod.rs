@@ -44,4 +44,4 @@ pub use validator::{
     WitnessStatus, WitnessTask,
 };
 
-pub use crate::vm::ExternalAnchor;
+pub use crate::vm::Claim;

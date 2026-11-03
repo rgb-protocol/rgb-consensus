@@ -32,7 +32,7 @@ use bitcoin::{OutPoint as Outpoint, Txid};
 use chrono::{MappedLocalTime, TimeZone, Utc};
 use strict_encoding::{StrictDecode, StrictDumb, StrictEncode};
 
-use super::external_anchor::ExternalAnchor;
+use super::claim::Claim;
 use crate::{
     AssignmentType, AssignmentsRef, BundleId, ContractId, FungibleState, Genesis, GlobalState,
     GlobalStateType, GraphSeal, Layer1, Metadata, OpFullType, OpId, Operation, RevealedData,
@@ -402,7 +402,7 @@ pub struct VmContext<'op, S: ContractStateAccess> {
     pub contract_id: ContractId,
     pub op_info: OpInfo<'op>,
     pub contract_state: Rc<RefCell<S>>,
-    pub pending_external_anchors: RefCell<BTreeSet<ExternalAnchor>>,
+    pub pending_claims: RefCell<BTreeSet<Claim>>,
 }
 
 type PrevState = BTreeMap<AssignmentType, Vec<RevealedState>>;

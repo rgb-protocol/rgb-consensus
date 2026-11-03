@@ -79,8 +79,8 @@ macro_rules! isa_instr {
     (vts s16[$s_idx:literal]) => {{
         RgbIsa::Contract(ContractOp::Vts(RegS::from($s_idx)))
     }};
-    (pma a64[$a_idx:literal],a64[$b_idx:literal]) => {{
-        RgbIsa::Contract(ContractOp::Pma(
+    (plc a64[$a_idx:literal],a64[$b_idx:literal]) => {{
+        RgbIsa::Contract(ContractOp::Plc(
             Reg16::from(u4::with($a_idx)),
             Reg16::from(u4::with($b_idx)),
         ))
