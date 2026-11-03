@@ -185,9 +185,11 @@ pub enum ContractOp<S: ContractStateAccess> {
     /// The first argument specifies which `a64[N]` register holds the amount to
     /// include in the claim, the second which `a64[M]` register holds the block
     /// number on the bridge's chain before which the bridge must have recorded
-    /// the lock. The claim's `opid` is the id of the operation being executed.
-    /// Sets `st0` to `false` and stops if either register is absent or the
-    /// amount is zero.
+    /// the lock. The claim's `opid` is the id of the operation being executed
+    /// and its `witness_id` the id of the operation's witness transaction.
+    /// Sets `st0` to `false` and stops if either register is absent, if the
+    /// amount is zero or if the operation has no witness transaction (i.e. it
+    /// is a genesis).
     #[display("plc     a64{0},a64{1}")]
     Plc(Reg16, Reg16),
 
@@ -543,8 +545,13 @@ impl<S: ContractStateAccess> InstructionSet for ContractOp<S> {
                     fail!()
                 };
                 let before_block = u64::from(before_block);
+                // the claim commits to the witness TX, so a genesis (having none) can't push one
+                let Some(witness_id) = context.op_info.op.witness_id() else {
+                    fail!()
+                };
                 context.pending_claims.borrow_mut().insert(Claim::Lock {
                     opid: context.op_info.id,
+                    witness_id,
                     amount,
                     before_block,
                 });
