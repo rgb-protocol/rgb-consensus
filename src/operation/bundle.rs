@@ -369,4 +369,30 @@ mod test {
         assert!(bundle.reveal_transition(parent).unwrap());
         assert_sorted(&bundle);
     }
+
+    #[test]
+    fn sort_child_before_both_parents() {
+        // a child spending from two parents in the same bundle
+        let parent_1 = transition(1, [Opout::new(OpId::from([1; 32]), A, 0)]);
+        let parent_2 = transition(2, [Opout::new(OpId::from([2; 32]), A, 0)]);
+        let child =
+            transition(3, [Opout::new(parent_1.id(), A, 0), Opout::new(parent_2.id(), A, 0)]);
+        let input_map = NonEmptyOrdMap::from_iter_checked(
+            [&parent_1, &parent_2, &child]
+                .into_iter()
+                .flat_map(|t| t.inputs.iter().map(|opout| (*opout, t.id()))),
+        );
+
+        // the child comes before both its parents, so the vistit must not stop at the first
+        // unsorted partent
+        let mut bundle = TransitionBundle {
+            input_map,
+            known_transitions: NonEmptyVec::from_iter_checked(
+                [child, parent_1, parent_2].map(|t| KnownTransition::new(t.id(), t)),
+            ),
+        };
+        bundle.sort_known_transitions();
+        assert_sorted(&bundle);
+        assert_eq!(bundle.known_transitions.len(), 3);
+    }
 }
