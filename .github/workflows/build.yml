@@ -44,7 +44,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-22.04, ubuntu-latest, macos-14, macos-latest, windows-2022, windows-latest ]
+        os: [ ubuntu-22.04, ubuntu-latest, macos-15, macos-latest, windows-2022, windows-latest ]
     steps:
       - uses: actions/checkout@v6
       - uses: actions-rust-lang/setup-rust-toolchain@v1
