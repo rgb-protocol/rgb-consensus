@@ -17,7 +17,7 @@ name = "rgbcore"
 crate-type = ["cdylib", "rlib"] # We need this for WASM
 
 [dependencies]
-rgb-aluvm = { version = "~0.11.2-rc.2", features = [
+rgb-aluvm = { version = "=0.11.2-rc.2", features = [
     "rgb-ascii-armor",
     "std",
 ] }
