@@ -17,8 +17,8 @@
 // limitations under the License.
 
 use amplify::confinement::Confined;
-use bitcoin::hashes::{sha256d, Hash, HashEngine};
-use bitcoin::{TxMerkleNode, Txid};
+use bitcoin::hashes::{sha256d, Hash};
+use bitcoin::{Transaction, TxMerkleNode, Txid};
 #[cfg(feature = "serde")]
 use serde_crate::{Deserialize, Serialize};
 
@@ -56,6 +56,8 @@ pub enum SpvValidationError {
     PositionOutOfBounds,
     /// recomputed merkle root does not match block header
     MerkleRootMismatch,
+    /// merkle path goes through a node whose preimage is a valid 64-byte transaction
+    InnerNodeIsTransaction,
 }
 
 impl SpvProof {
@@ -64,6 +66,14 @@ impl SpvProof {
     /// `header` must be the one the resolver reports at [`SpvProof::block_height`] in the
     /// best chain; a proof which a reorg has invalidated then fails with
     /// [`SpvValidationError::MerkleRootMismatch`].
+    ///
+    /// A node's preimage is the concatenation of its children, which is 64 bytes long, just like
+    /// some transactions. A mined 64-byte transaction would then let a proof extend one level
+    /// below it, "proving" the inclusion of a TXID made of either of its halves
+    /// (CVE-2017-12842). A path going through a node whose preimage is a valid transaction is
+    /// therefore rejected with [`SpvValidationError::InnerNodeIsTransaction`]. An honest proof
+    /// hits this only if a pair of hashes happens to decode as a transaction; callers treat it
+    /// like any invalid proof, i.e. with a warning and a fallback to the resolver.
     pub fn validate(
         &self,
         txid: Txid,
@@ -74,10 +84,13 @@ impl SpvProof {
         for sibling in self.merkle.iter() {
             let sib = sibling.to_raw_hash();
             let (left, right) = if pos & 1 == 0 { (hash, sib) } else { (sib, hash) };
-            let mut encoder = sha256d::Hash::engine();
-            encoder.input(&left.to_byte_array());
-            encoder.input(&right.to_byte_array());
-            hash = sha256d::Hash::from_engine(encoder);
+            let mut node = [0u8; 64];
+            node[..32].copy_from_slice(left.as_byte_array());
+            node[32..].copy_from_slice(right.as_byte_array());
+            if bitcoin::consensus::deserialize::<Transaction>(&node).is_ok() {
+                return Err(SpvValidationError::InnerNodeIsTransaction);
+            }
+            hash = sha256d::Hash::hash(&node);
             pos >>= 1;
         }
         // Each sibling consumes one bit of the position, so a path of `n` siblings can
@@ -110,6 +123,8 @@ mod test {
     use std::num::NonZeroU32;
 
     use bitcoin::block::{Header, Version};
+    use bitcoin::hashes::HashEngine;
+    use bitcoin::hex::FromHex;
     use bitcoin::{BlockHash, CompactTarget};
 
     use super::*;
@@ -180,6 +195,67 @@ mod test {
             ..proof
         };
         assert_eq!(proof.validate(txid, &header), Err(SpvValidationError::PositionOutOfBounds));
+    }
+
+    /// CVE-2017-12842 test vectors from Electrum (`tests/test_verifier.py`): a 64-byte TX mined
+    /// on testnet3, its merkle path and the merkle root of its block.
+    const VALID_64_BYTE_TX: &str = "0200000001cb659c5528311901a7aada7db817bd6e3ce2f05d1c62c385b7caad\
+                                    b65fac75201234000000fabcdefa01abcd1234010000000405060708fabcdefa";
+    const MERKLE_BRANCH: [&str; 2] = [
+        "f2994fd4546086b21b4916b76cf901afb5c4db1c3ecbfc91d6f4cae1186dfe12",
+        "6b65935528311901c7acda7db817bd6e3ce2f05d1c62c385b7caadb65fac7520",
+    ];
+    const MERKLE_ROOT: &str = "11dbac015b6969ea75509dd1250f33c04ec4d562c2d895de139a65f62f808254";
+
+    /// The 64-byte TX, the header of its block and the proof of a leaf at `pos` with path
+    /// `[extra] ++ MERKLE_BRANCH`.
+    fn cve_2017_12842_fixture(
+        pos: u32,
+        extra: Option<TxMerkleNode>,
+    ) -> ([u8; 64], Header, SpvProof) {
+        let tx_bytes: [u8; 64] = Vec::<u8>::from_hex(VALID_64_BYTE_TX)
+            .unwrap()
+            .try_into()
+            .unwrap();
+        let (_, header, _) = fixture();
+        let header = Header {
+            merkle_root: MERKLE_ROOT.parse().unwrap(),
+            ..header
+        };
+        let merkle = extra
+            .into_iter()
+            .chain(MERKLE_BRANCH.iter().map(|node| node.parse().unwrap()))
+            .collect::<Vec<_>>();
+        let proof = SpvProof {
+            block_height: NonZeroU32::MIN,
+            pos,
+            merkle: Confined::try_from(merkle).unwrap(),
+        };
+        (tx_bytes, header, proof)
+    }
+
+    #[test]
+    fn validate_accepts_a_mined_64_byte_tx() {
+        let (tx_bytes, header, proof) = cve_2017_12842_fixture(3, None);
+        let tx: bitcoin::Transaction = bitcoin::consensus::deserialize(&tx_bytes).unwrap();
+        assert_eq!(proof.validate(tx.compute_txid(), &header), Ok(()));
+    }
+
+    #[test]
+    fn validate_detects_a_64_byte_tx_as_inner_node() {
+        let half = |bytes: &[u8]| <[u8; 32]>::try_from(bytes).unwrap();
+        let (tx_bytes, _, _) = cve_2017_12842_fixture(3, None);
+        let (first, second) = (half(&tx_bytes[..32]), half(&tx_bytes[32..]));
+        // the fake leaf is either half of the TX, as a child of the TX itself
+        for (pos, sibling, fake) in [(7, first, second), (6, second, first)] {
+            let (_, header, proof) =
+                cve_2017_12842_fixture(pos, Some(TxMerkleNode::from_byte_array(sibling)));
+            assert_eq!(
+                proof.validate(Txid::from_byte_array(fake), &header),
+                Err(SpvValidationError::InnerNodeIsTransaction),
+                "fake leaf at pos {pos} should be rejected"
+            );
+        }
     }
 
     #[test]
